@@ -9,13 +9,14 @@ from .database import engine
 from .models import Base
 from .routers.auth import router as auth_router
 from .routers.todo import router as todo_router
+from .routers.gateway import router as gateway_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="LLMBastion",
     description="Secure baseline for an evolving LLM security gateway.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.mount(
@@ -40,9 +41,10 @@ def health():
     return {
         "status": "ok",
         "service": "LLMBastion",
-        "version": "0.1.0",
+        "version": "0.2.0",
     }
 
 
 app.include_router(auth_router)
 app.include_router(todo_router)
+app.include_router(gateway_router)
