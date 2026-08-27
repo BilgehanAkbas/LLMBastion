@@ -9,3 +9,30 @@ body {
 textarea {
     resize: vertical;
 }
+
+.metric-card {
+    border: 0;
+}
+
+.metric-label {
+    color: #6c757d;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-top: 0.25rem;
+}
+
+.metric-value-small {
+    font-size: 1.35rem;
+}
+
+.table td,
+.table th {
+    vertical-align: middle;
+}

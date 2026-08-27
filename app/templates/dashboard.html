@@ -1,0 +1,99 @@
+{% extends "layout.html" %}
+
+{% block title %}Security Dashboard - LLMBastion{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">Security Dashboard</h2>
+        <p class="text-muted mb-0">LLMBastion audit telemetry overview</p>
+    </div>
+    <a class="btn btn-outline-dark" href="/docs">Open Swagger</a>
+</div>
+
+<div class="row dashboard-metrics">
+    <div class="col-md-6 col-lg mb-3">
+        <div class="card metric-card h-100">
+            <div class="card-body">
+                <div class="metric-label">Total Requests</div>
+                <div class="metric-value">{{ total_requests }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg mb-3">
+        <div class="card metric-card h-100">
+            <div class="card-body">
+                <div class="metric-label">Allowed</div>
+                <div class="metric-value">{{ allowed_requests }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg mb-3">
+        <div class="card metric-card h-100">
+            <div class="card-body">
+                <div class="metric-label">Blocked</div>
+                <div class="metric-value">{{ blocked_requests }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg mb-3">
+        <div class="card metric-card h-100">
+            <div class="card-body">
+                <div class="metric-label">DataGuard Findings</div>
+                <div class="metric-value">{{ data_guard_findings }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-12 col-lg mb-3">
+        <div class="card metric-card h-100">
+            <div class="card-body">
+                <div class="metric-label">Avg. Latency</div>
+                <div class="metric-value metric-value-small">{{ average_latency_ms }} ms</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-2">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Recent Requests</strong>
+        <small class="text-muted">Last 20</small>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Request ID</th>
+                    <th>Risk</th>
+                    <th>Action</th>
+                    <th>Latency</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in recent_requests %}
+                <tr>
+                    <td><code>{{ item.request_id }}</code></td>
+                    <td>{{ "%.2f"|format(item.risk_score) }}</td>
+                    <td>
+                        {% if item.action == "BLOCK" %}
+                            <span class="badge badge-danger">BLOCK</span>
+                        {% else %}
+                            <span class="badge badge-success">ALLOW</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ "%.2f"|format(item.latency_ms) }} ms</td>
+                    <td>{{ item.created_at }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">
+                        No gateway requests logged yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

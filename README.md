@@ -1,18 +1,10 @@
 # LLMBastion
 
-LLMBastion is an **LLM Security Gateway** that sits between an application and a large language model (LLM). Its goal is to inspect both incoming prompts and outgoing model responses before they cross the application boundary.
+LLMBastion is an **LLM Security Gateway** that sits between an application and a large language model. It inspects incoming prompts before they reach the model and scans model responses before they are returned to the user.
 
-The project currently uses **FastAPI, SQLite, SQLAlchemy, Gemini, rule-based prompt-injection detection, risk-based policy enforcement, output redaction, and security audit telemetry**.
+The current prototype uses **FastAPI, SQLite, SQLAlchemy, Groq, rule-based prompt-injection detection, risk-based policy enforcement, output redaction, audit telemetry, and a security dashboard**.
 
-> Current status: early security-gateway prototype. Gemini is the active provider today; provider-agnostic routing is a future goal.
-
-## Why LLMBastion?
-
-LLM applications introduce a different security problem from traditional request/response systems: user-controlled natural language can attempt to override instructions, extract hidden prompts, bypass safety controls, or influence downstream model behavior.
-
-LLMBastion adds an external security layer around the LLM instead of relying only on the model to protect itself.
-
-## Current Flow
+## How it works
 
 ```text
 User Prompt
@@ -20,17 +12,17 @@ User Prompt
     v
 RuleGuard
     |
-    +--> Normalization
-    +--> Regex detection
-    +--> Matched rules
-    +--> Heuristic risk score
+    +--> normalization
+    +--> regex detection
+    +--> matched rules
+    +--> heuristic risk score
     |
     v
 InputPolicy
    / \
 BLOCK ALLOW
   |      |
-Audit   Gemini
+Audit   Groq
          |
          v
       DataGuard
@@ -42,28 +34,26 @@ Audit   Gemini
         User
 ```
 
-A blocked request never reaches Gemini. An allowed request is sent to Gemini, then the model response is scanned by `DataGuard` before being returned to the user.
+A blocked request never reaches Groq. An allowed request is sent to Groq and its response is scanned by `DataGuard` before being returned.
 
-## Current Security Components
+## Core components
 
 ### RuleGuard
 
 `RuleGuard` is the first input detector. It normalizes user input and checks it against known prompt-injection and jailbreak patterns.
 
-Current categories include:
+Current rule categories include:
 
 - instruction override
 - system/developer prompt exfiltration
 - security bypass attempts
 - jailbreak/developer-mode patterns
 
-It produces **evidence and a heuristic risk score**. It does **not** make the final ALLOW/BLOCK decision.
-
-The score is not a probability. A score of `1.0` means the configured rules produced the maximum heuristic risk score, not that an attack is known with 100% certainty.
+It produces **evidence and a heuristic risk score**. It does not make the final ALLOW/BLOCK decision.
 
 ### InputPolicy
 
-`InputPolicy` converts detector output into an action.
+`InputPolicy` converts the input risk score into an action.
 
 Current prototype policy:
 
@@ -72,36 +62,22 @@ risk score < 0.70  -> ALLOW
 risk score >= 0.70 -> BLOCK
 ```
 
-The threshold is currently heuristic and will later be calibrated using an evaluation dataset.
+The threshold is heuristic for now and will later be calibrated using an evaluation dataset.
 
 ### DataGuard
 
-`DataGuard` scans allowed LLM responses before they reach the user.
-
-The current prototype can detect and redact obvious examples of:
+`DataGuard` scans allowed model responses and currently redacts obvious examples of:
 
 - email addresses
 - Turkish mobile phone numbers
 - selected API-key formats
 - JWTs
 
-Example:
+Only the finding type is written to audit telemetry; the detected sensitive value itself is not stored there.
 
-```text
-user@example.com
-```
+## Audit data
 
-becomes:
-
-```text
-[REDACTED_EMAIL]
-```
-
-Only the **finding type** is written to security telemetry; the detected sensitive value itself is not stored there.
-
-## Security Audit Telemetry
-
-LLMBastion intentionally avoids storing raw prompts and raw model responses in its audit tables at this stage.
+LLMBastion currently keeps only security telemetry, not raw prompts or raw model responses.
 
 ### `requests`
 
@@ -113,7 +89,7 @@ latency_ms
 created_at
 ```
 
-This table answers: **What happened to the request?**
+This table answers: **What happened?**
 
 ### `detector_results`
 
@@ -127,7 +103,7 @@ latency_ms
 
 This table answers: **Why did it happen?**
 
-One request can have multiple detector results:
+A single request can have multiple detector results:
 
 ```text
 request_id = abc123
@@ -137,38 +113,29 @@ request_id = abc123
 +-- data_guard
 ```
 
-RuleGuard evidence can look like:
+## Dashboard
 
-```json
-[
-  {
-    "rule_id": "instruction_override",
-    "weight": 0.55,
-    "matched_text": "ignore previous instructions"
-  },
-  {
-    "rule_id": "system_prompt_exfiltration",
-    "weight": 0.65,
-    "matched_text": "reveal your system prompt"
-  }
-]
+Open:
+
+```text
+http://127.0.0.1:8000/dashboard
 ```
 
-DataGuard evidence is intentionally simpler:
+The dashboard displays request counts, ALLOW/BLOCK statistics, DataGuard findings, average latency, and recent requests.
 
-```json
-["email", "api_key"]
+Swagger API documentation is available at:
+
+```text
+http://127.0.0.1:8000/docs
 ```
 
-## API
-
-Main gateway endpoint:
+## Main API
 
 ```http
 POST /api/v1/chat
 ```
 
-Normal request:
+Example normal request:
 
 ```json
 {
@@ -176,7 +143,7 @@ Normal request:
 }
 ```
 
-Injection attempt:
+Example prompt-injection attempt:
 
 ```json
 {
@@ -184,34 +151,27 @@ Injection attempt:
 }
 ```
 
-A clear injection attempt can be blocked before Gemini is called.
+## Project background
 
-## Project Background
-
-LLMBastion evolved from an earlier FastAPI + SQLite + Gemini Todo application. Instead of discarding that application, it is kept as a legacy/demo client while the repository is gradually transformed into an LLM-security project.
-
-The project idea was also influenced by an earlier article I wrote about security risks around AI agents:
+The idea behind LLMBastion was also influenced by an article I previously wrote about security risks around AI agents:
 
 **“Yapay Zeka Ajanları Şirketleri Nasıl Hackliyor”**  
 https://medium.com/@bilgehanakbas/yapay-zeka-ajanlar%C4%B1-%C5%9Firketleri-nas%C4%B1l-hackliyor-b6e0308b7cea
 
-Thinking about the growing intersection of autonomous AI systems and cybersecurity helped motivate the decision to build a practical security layer around LLM applications rather than another standalone chatbot.
+Thinking about the intersection of autonomous AI systems and cybersecurity helped motivate the development of a practical security layer around LLM applications instead of another standalone chatbot.
 
-## Tech Stack
+## Tech stack
 
 - Python
 - FastAPI
 - Pydantic
 - SQLAlchemy
 - SQLite
-- Gemini / LangChain Google GenAI
-- JWT authentication
+- Groq
 - Pytest
 - Docker / Docker Compose
 
-## Run Locally
-
-Python 3.11+ is recommended.
+## Run locally
 
 ```powershell
 python -m venv .venv
@@ -222,51 +182,24 @@ Copy-Item .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Fill your local `.env` with your own values:
-
-```env
-GOOGLE_API_KEY=YOUR_LOCAL_KEY
-JWT_SECRET_KEY=YOUR_RANDOM_SECRET
-GEMINI_MODEL=gemini-pro
-```
-
-Never commit `.env`.
-
-Useful endpoints:
-
-```text
-Application: http://127.0.0.1:8000
-Swagger:     http://127.0.0.1:8000/docs
-Health:      http://127.0.0.1:8000/health
-```
+Set your own local values in `.env` and never commit that file.
 
 ## Tests
 
 ```powershell
-pytest -q
+python -m pytest -q
 ```
 
-The test suite currently covers the RuleGuard baseline, policy decisions, gateway flow, audit persistence, DataGuard behavior, and earlier security contracts.
+## Current limitations
 
-## Current Limitations
+This is a baseline security gateway, not a claim that regex solves prompt injection.
 
-This is intentionally a baseline, not a claim that regex solves prompt injection.
+- Regex can be bypassed with paraphrasing and advanced obfuscation.
+- Risk weights and the current threshold are heuristic.
+- DataGuard currently uses pattern matching.
+- Groq is the only connected provider today.
+- Semantic detection, ML classification, RAG/context protection, and broader provider support are future work.
 
-- Regex rules can be bypassed with paraphrasing or advanced obfuscation.
-- Risk weights and the `0.70` threshold are heuristic, not statistically calibrated.
-- DataGuard uses pattern matching and does not yet provide broad PII/secret classification.
-- Gemini is currently the only connected LLM provider.
-- There is no semantic detector, ML classifier, RAG context guard, or security dashboard yet.
-- Audit telemetry is minimal by design.
-
-## Direction
-
-Likely next extensions include semantic prompt-injection detection, benchmark-driven threshold calibration, richer output protection, a security dashboard, indirect prompt-injection protection for RAG/context, and additional LLM providers.
-
-Long-term goal:
+## Long-term direction
 
 > **A provider-agnostic LLM Security Gateway for prompt-injection detection, risk-based policy enforcement, sensitive-data protection, and security observability.**
-
-## Security Note
-
-Real API keys, JWT secrets, local databases, virtual environments, and IDE files are excluded from Git/Docker build context. Use `.env.example` only as a template and keep real secrets in your local `.env`.
