@@ -1,37 +1,40 @@
 # LLMBastion
 
-LLMBastion is an **LLM Security Gateway** that sits between an application and a large language model. It inspects incoming prompts before they reach the model and scans model responses before they are returned to the user.
+LLMBastion is an **LLM Security Gateway** that sits between an application and a large language model. It inspects incoming prompts before they reach the model, combines rule-based and ML-based security signals, enforces an input policy, scans allowed model responses for sensitive data, and stores security telemetry for observability.
 
-The current prototype uses **FastAPI, SQLite, SQLAlchemy, Groq, rule-based prompt-injection detection, risk-based policy enforcement, output redaction, audit telemetry, and a security dashboard**.
+The current prototype uses **FastAPI, SQLite, SQLAlchemy, Groq, RuleGuard, SemanticGuard, RiskEngine, DataGuard, audit telemetry, and a security dashboard**.
 
-## How it works
+## Architecture
 
 ```text
 User Prompt
     |
-    v
-RuleGuard
-    |
-    +--> normalization
-    +--> regex detection
-    +--> matched rules
-    +--> heuristic risk score
-    |
-    v
-InputPolicy
-   / \
-BLOCK ALLOW
-  |      |
-Audit   Groq
-         |
-         v
-      DataGuard
-         |
-         v
-       Audit
-         |
-         v
-        User
+    +----------------------+
+    |                      |
+    v                      v
+RuleGuard             SemanticGuard
+Regex rules           TF-IDF + Logistic Regression
+    |                      |
+    +----------+-----------+
+               |
+               v
+           RiskEngine
+               |
+               v
+             Policy
+          /          \
+       BLOCK         ALLOW
+         |              |
+       Audit           Groq
+                        |
+                        v
+                    DataGuard
+                        |
+                        v
+                      Audit
+                        |
+                        v
+                       User
 ```
 
 A blocked request never reaches Groq. An allowed request is sent to Groq and its response is scanned by `DataGuard` before being returned.
@@ -40,7 +43,7 @@ A blocked request never reaches Groq. An allowed request is sent to Groq and its
 
 ### RuleGuard
 
-`RuleGuard` is the first input detector. It normalizes user input and checks it against known prompt-injection and jailbreak patterns.
+`RuleGuard` is the deterministic input detector. It normalizes user input and checks it against known prompt-injection and jailbreak patterns.
 
 Current rule categories include:
 
@@ -49,35 +52,75 @@ Current rule categories include:
 - security bypass attempts
 - jailbreak/developer-mode patterns
 
-It produces **evidence and a heuristic risk score**. It does not make the final ALLOW/BLOCK decision.
+It produces matched evidence plus a heuristic score.
+
+Current RuleGuard threshold:
+
+```text
+0.50
+```
+
+### SemanticGuard
+
+`SemanticGuard` is an ML-based prompt-injection detector built with:
+
+```text
+TF-IDF
+   ↓
+Logistic Regression
+   ↓
+attack probability
+```
+
+The model is trained from the public `S-Labs/prompt-injection-dataset` training split.
+
+Current SemanticGuard threshold:
+
+```text
+0.40
+```
+
+The model artifact is generated locally and ignored by Git because it can be reproduced from the public training data.
+
+### RiskEngine
+
+`RiskEngine` aggregates input detector signals.
+
+The current v1 strategy intentionally mirrors the evaluated hybrid experiment:
+
+```text
+RuleGuard >= 0.50
+OR
+SemanticGuard >= 0.40
+→ block signal
+```
+
+A weighted risk formula is not used yet because it has not been experimentally validated.
 
 ### InputPolicy
 
-`InputPolicy` converts the input risk score into an action.
-
-Current prototype policy:
+`InputPolicy` converts the RiskEngine assessment into the final:
 
 ```text
-risk score < 0.70  -> ALLOW
-risk score >= 0.70 -> BLOCK
+ALLOW
+or
+BLOCK
 ```
-
-The threshold is heuristic for now and will later be calibrated using an evaluation dataset.
 
 ### DataGuard
 
-`DataGuard` scans allowed model responses and currently redacts obvious examples of:
+`DataGuard` scans allowed LLM responses and currently redacts obvious examples of:
 
 - email addresses
 - Turkish mobile phone numbers
 - selected API-key formats
 - JWTs
 
-Only the finding type is written to audit telemetry; the detected sensitive value itself is not stored there.
+Only finding types are stored in audit telemetry. Raw detected sensitive values are not stored.
 
-## Audit data
+## Audit telemetry
 
-LLMBastion currently keeps only security telemetry, not raw prompts or raw model responses.
+LLMBastion currently stores security telemetry, not raw prompts or raw model responses.
 
 ### `requests`
 
@@ -89,7 +132,7 @@ latency_ms
 created_at
 ```
 
-This table answers: **What happened?**
+This answers: **What happened?**
 
 ### `detector_results`
 
@@ -101,19 +144,19 @@ evidence
 latency_ms
 ```
 
-This table answers: **Why did it happen?**
+This answers: **Why did it happen?**
 
-A single request can have multiple detector results:
+A request can contain multiple detector results:
 
 ```text
 request_id = abc123
 |
 +-- rule_guard
-|
++-- semantic_guard
 +-- data_guard
 ```
 
-## Dashboard
+## Security dashboard
 
 Open:
 
@@ -121,9 +164,19 @@ Open:
 http://127.0.0.1:8000/dashboard
 ```
 
-The dashboard displays request counts, ALLOW/BLOCK statistics, DataGuard findings, average latency, and recent requests.
+The dashboard shows:
 
-Swagger API documentation is available at:
+- total / allowed / blocked request counts
+- block rate
+- DataGuard findings
+- average latency
+- RuleGuard and SemanticGuard scores
+- detector thresholds and margins
+- which detector triggered a block
+- request-level decision analysis
+- detector and provider latency breakdown
+
+Swagger documentation is available at:
 
 ```text
 http://127.0.0.1:8000/docs
@@ -135,7 +188,7 @@ http://127.0.0.1:8000/docs
 POST /api/v1/chat
 ```
 
-Example normal request:
+Normal request:
 
 ```json
 {
@@ -143,7 +196,7 @@ Example normal request:
 }
 ```
 
-Example prompt-injection attempt:
+Prompt-injection attempt:
 
 ```json
 {
@@ -151,14 +204,41 @@ Example prompt-injection attempt:
 }
 ```
 
-## Project background
+## Evaluation
 
-The idea behind LLMBastion was also influenced by an article I previously wrote about security risks around AI agents:
+The project includes separate evaluation and ML experiment tooling under:
 
-**“Yapay Zeka Ajanları Şirketleri Nasıl Hackliyor”**  
-https://medium.com/@bilgehanakbas/yapay-zeka-ajanlar%C4%B1-%C5%9Firketleri-nas%C4%B1l-hackliyor-b6e0308b7cea
+```text
+evaluation/
+ml/
+```
 
-Thinking about the intersection of autonomous AI systems and cybersecurity helped motivate the development of a practical security layer around LLM applications instead of another standalone chatbot.
+### Rule-based baseline
+
+```powershell
+python evaluation\evaluate_rule_guard.py
+```
+
+### ML / hybrid experiments
+
+```powershell
+python ml\train_and_compare.py
+python ml\calibrate_threshold.py
+python ml\external_eval_deepset.py
+python ml\public_benchmark_slabs.py
+python ml\public_benchmark_slabs_clean.py
+```
+
+On the de-duplicated public S-Labs test benchmark used during development, the TF-IDF + Logistic Regression classifier achieved:
+
+```text
+Precision: 0.985
+Recall:    0.935
+F1:        0.960
+FPR:       0.012
+```
+
+These are **development benchmark results, not production-performance claims**. The public benchmark is primarily English, so broader multilingual evaluation is still needed.
 
 ## Tech stack
 
@@ -168,6 +248,9 @@ Thinking about the intersection of autonomous AI systems and cybersecurity helpe
 - SQLAlchemy
 - SQLite
 - Groq
+- scikit-learn
+- Hugging Face Datasets
+- Jinja2
 - Pytest
 - Docker / Docker Compose
 
@@ -179,10 +262,28 @@ python -m venv .venv
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 Copy-Item .env.example .env
+```
+
+Set your own local values in `.env`:
+
+```text
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-20b
+```
+
+Build the SemanticGuard model artifact:
+
+```powershell
+python ml\train_semantic_guard.py
+```
+
+Then run:
+
+```powershell
 uvicorn app.main:app --reload
 ```
 
-Set your own local values in `.env` and never commit that file.
+Never commit `.env`, local database files, or generated model artifacts.
 
 ## Tests
 
@@ -190,15 +291,26 @@ Set your own local values in `.env` and never commit that file.
 python -m pytest -q
 ```
 
+## Project background
+
+The idea behind LLMBastion was also influenced by an article I previously wrote about security risks around AI agents:
+
+**“Yapay Zeka Ajanları Şirketleri Nasıl Hackliyor”**  
+https://medium.com/@bilgehanakbas/yapay-zeka-ajanlar%C4%B1-%C5%9Firketleri-nas%C4%B1l-hackliyor-b6e0308b7cea
+
+Thinking about the intersection of autonomous AI systems and cybersecurity helped motivate the development of a practical security layer around LLM applications instead of another standalone chatbot.
+
 ## Current limitations
 
-This is a baseline security gateway, not a claim that regex solves prompt injection.
+LLMBastion is still a prototype and the current detectors are not a complete prompt-injection defense.
 
-- Regex can be bypassed with paraphrasing and advanced obfuscation.
-- Risk weights and the current threshold are heuristic.
+- RuleGuard is intentionally narrow and can miss paraphrases or advanced obfuscation.
+- SemanticGuard performance depends on its training distribution.
+- The public ML benchmark used so far is primarily English.
 - DataGuard currently uses pattern matching.
 - Groq is the only connected provider today.
-- Semantic detection, ML classification, RAG/context protection, and broader provider support are future work.
+- The dashboard is currently intended for local development and is not protected by authentication.
+- The current RiskEngine uses an OR strategy rather than a learned or calibrated multi-signal risk model.
 
 ## Long-term direction
 

@@ -28,3 +28,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+app/artifacts/*.joblib
+app/artifacts/*_meta.json

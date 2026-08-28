@@ -89,6 +89,18 @@ RULES = (
     ),
 )
 
+# Generic meta-discussion patterns. These are not "safe words"; they only reduce
+# confidence when the suspicious phrase is being discussed rather than issued
+# as an instruction.
+META_CONTEXT_PATTERNS = (
+    r"\b(explain|define|describe)\s+(why\s+)?(the\s+)?(term|phrase|sentence|concept)\b",
+    r"\bin\s+the\s+context\s+of\b",
+    r"\bassociated\s+with\s+prompt\s+injection\b",
+    r"\b(terimi|ifadesi|ifadesini|cümlesi|cümlesini)\b.*\b(ne|neyi)\s+ifade\s+ediyor\b",
+)
+
+META_CONTEXT_MULTIPLIER = 0.40
+
 
 class RuleGuard:
     """Fast, deterministic baseline detector for obvious prompt-injection patterns."""
@@ -104,6 +116,23 @@ class RuleGuard:
 
         normalized = normalized.lower()
         return " ".join(normalized.split())
+
+    @staticmethod
+    def _is_quoted(normalized_text: str, matched_text: str) -> bool:
+        quoted_forms = (
+            f"'{matched_text}'",
+            f'"{matched_text}"',
+            f"“{matched_text}”",
+            f"‘{matched_text}’",
+        )
+        return any(form in normalized_text for form in quoted_forms)
+
+    @staticmethod
+    def _has_meta_context(normalized_text: str) -> bool:
+        return any(
+            re.search(pattern, normalized_text)
+            for pattern in META_CONTEXT_PATTERNS
+        )
 
     def analyze(self, text: str) -> RuleGuardResult:
         """Return matched rule evidence and a bounded heuristic risk score."""
@@ -130,6 +159,16 @@ class RuleGuard:
                     break
 
         score = min(sum(match.weight for match in matches), 1.0)
+
+        if matches:
+            quoted_match = any(
+                self._is_quoted(normalized_text, match.matched_text)
+                for match in matches
+            )
+            meta_context = self._has_meta_context(normalized_text)
+
+            if quoted_match or meta_context:
+                score *= META_CONTEXT_MULTIPLIER
 
         return RuleGuardResult(
             score=round(score, 2),

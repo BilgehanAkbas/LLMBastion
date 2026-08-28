@@ -28,7 +28,7 @@ def test_groq_provider_returns_text(monkeypatch):
 
     provider = GroqProvider(
         api_key="test-key",
-        model="qwen/qwen3.6-27b",
+        model="openai/gpt-oss-20b",
     )
 
     assert provider.generate("hello") == "mock response"

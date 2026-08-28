@@ -1,0 +1,76 @@
+{% extends "layout.html" %}
+{% block title %}Request Detail - LLMBastion{% endblock %}
+{% block content %}
+<div class="container request-detail-wrap">
+    <a href="/dashboard" class="btn btn-sm btn-outline-secondary mb-3">← Back to Dashboard</a>
+    <h2>Request Detail</h2>
+    <p class="text-muted request-id">{{ gateway_request.request_id }}</p>
+
+    <div class="row mb-4">
+        <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">ACTION</small>{% if gateway_request.action == 'BLOCK' %}<strong class="text-danger">BLOCK</strong>{% else %}<strong class="text-success">ALLOW</strong>{% endif %}</div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">RISK SCORE</small><strong>{{ "%.2f"|format(gateway_request.risk_score) }}</strong></div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">TOTAL LATENCY</small><strong>{{ "%.2f"|format(gateway_request.latency_ms) }} ms</strong></div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">CREATED</small><span>{{ gateway_request.created_at }}</span></div></div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><strong>Decision Analysis</strong></div>
+        <div class="card-body">
+            <p class="mb-3">{{ decision_reason }}</p>
+            <div class="row">
+                <div class="col-md-4 mb-3 mb-md-0"><div class="detail-label">Triggered By</div>{% if triggered_detectors %}{% for detector in triggered_detectors %}<span class="badge badge-danger mr-1">{{ detector }}</span>{% endfor %}{% else %}<span class="badge badge-success">No detector</span>{% endif %}</div>
+                <div class="col-md-4 mb-3 mb-md-0"><div class="detail-label">Provider</div>{% if provider_called %}<span class="badge badge-success">CALLED</span>{% else %}<span class="badge badge-secondary">SKIPPED</span>{% endif %}</div>
+                <div class="col-md-4"><div class="detail-label">Estimated Provider / App Time</div><strong>{{ "%.2f"|format(other_latency_ms) }} ms</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <h4>Detector Results</h4>
+    {% for detector in detectors %}
+    <div class="card mb-3 detector-card">
+        <div class="card-header d-flex justify-content-between flex-wrap">
+            <div><strong>{{ detector.name }}</strong>{% if detector.threshold is not none %}{% if detector.triggered %}<span class="badge badge-danger ml-2">TRIGGERED</span>{% else %}<span class="badge badge-success ml-2">PASS</span>{% endif %}{% endif %}</div>
+            <span>Score: <strong>{{ "%.2f"|format(detector.score) }}</strong>&nbsp; | &nbsp;Latency: <strong>{{ "%.3f"|format(detector.latency_ms) }} ms</strong></span>
+        </div>
+        <div class="card-body">
+            {% if detector.threshold is not none %}
+            <div class="row detector-summary mb-3">
+                <div class="col-sm-4 mb-2"><div class="detail-label">Score</div><strong>{{ "%.2f"|format(detector.score) }}</strong></div>
+                <div class="col-sm-4 mb-2"><div class="detail-label">Threshold</div><strong>{{ "%.2f"|format(detector.threshold) }}</strong></div>
+                <div class="col-sm-4 mb-2"><div class="detail-label">Margin</div><strong>{% if detector.margin >= 0 %}+{% endif %}{{ "%.2f"|format(detector.margin) }}</strong></div>
+            </div>
+            {% endif %}
+
+            {% if detector.name == 'rule_guard' %}
+                {% if detector.findings %}
+                    {% for item in detector.findings %}
+                    {% if item is mapping %}<div class="border-bottom pb-2 mb-2">
+                        {% if item.rule_id is defined %}<div><strong>Rule:</strong> <code>{{ item.rule_id }}</code></div>{% endif %}
+                        {% if item.weight is defined %}<div><strong>Weight:</strong> {{ item.weight }}</div>{% endif %}
+                        {% if item.matched_text is defined %}<div><strong>Matched:</strong> <code>{{ item.matched_text }}</code></div>{% endif %}
+                    </div>{% endif %}
+                    {% endfor %}
+                {% else %}<span class="text-muted">No regex rule matched.</span>{% endif %}
+            {% elif detector.name == 'semantic_guard' %}
+                <p class="mb-0 text-muted">SemanticGuard returns the ML attack probability. A score at or above the threshold triggers the detector.</p>
+            {% elif detector.name == 'data_guard' %}
+                {% if detector.findings %}{% for item in detector.findings %}<span class="badge badge-warning mr-1">{{ item }}</span>{% endfor %}{% else %}<span class="text-muted">No sensitive output findings.</span>{% endif %}
+            {% else %}
+                {% if detector.findings %}{% for item in detector.findings %}<span class="badge badge-secondary mr-1">{{ item }}</span>{% endfor %}{% else %}<span class="text-muted">No findings.</span>{% endif %}
+            {% endif %}
+        </div>
+    </div>
+    {% else %}<div class="alert alert-secondary">No detector results found.</div>{% endfor %}
+
+    <div class="card mb-4">
+        <div class="card-header"><strong>Latency Breakdown</strong></div>
+        <div class="card-body">
+            {% for detector in detectors %}<div class="d-flex justify-content-between border-bottom py-2"><span>{{ detector.name }}</span><strong>{{ "%.3f"|format(detector.latency_ms) }} ms</strong></div>{% endfor %}
+            <div class="d-flex justify-content-between border-bottom py-2"><span>Provider / framework / audit overhead <small class="text-muted">(estimated)</small></span><strong>{{ "%.3f"|format(other_latency_ms) }} ms</strong></div>
+            <div class="d-flex justify-content-between pt-2"><span>Total</span><strong>{{ "%.3f"|format(gateway_request.latency_ms) }} ms</strong></div>
+        </div>
+    </div>
+
+    <div class="alert alert-light border mt-4">Raw prompts and model responses are not stored in audit telemetry.</div>
+</div>
+{% endblock %}

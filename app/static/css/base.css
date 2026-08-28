@@ -36,3 +36,11 @@ textarea {
 .table th {
     vertical-align: middle;
 }
+
+
+.metric-subtext { color: #6c757d; font-size: 0.8rem; margin-top: 0.15rem; }
+.request-detail-wrap { max-width: 1050px; margin-top: 6px; }
+.request-id { font-family: monospace; }
+.detail-label { color: #6c757d; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.2rem; }
+.detector-summary { background: #f8f9fa; border-radius: 0.35rem; padding: 0.85rem 0.75rem 0.25rem; }
+.detector-card .card-header { gap: 0.75rem; }
