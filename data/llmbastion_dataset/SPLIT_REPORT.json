@@ -1,0 +1,234 @@
+{
+  "method": "exact group-aware MILP split",
+  "grouping_rules": {
+    "same_pair_id_same_split": true,
+    "near_duplicate_threshold": 0.85,
+    "near_duplicate_metric": "char_wb TF-IDF 3-5 gram cosine similarity",
+    "connected_components": 868,
+    "group_size_distribution": {
+      "1": 544,
+      "2": 318,
+      "3": 5,
+      "5": 1
+    },
+    "near_duplicate_pairs_ge_085": 33
+  },
+  "targets": {
+    "train": {
+      "rows": 840,
+      "labels": {
+        "attack": 420,
+        "safe": 420
+      },
+      "languages": {
+        "tr": 378,
+        "en": 378,
+        "tr-en": 84
+      },
+      "attack_families": {
+        "authority_claim_bypass": 28,
+        "code_switching": 28,
+        "confirmation_trap": 28,
+        "encoding_obfuscation": 28,
+        "indirect_injection": 28,
+        "instruction_override": 28,
+        "memory_context_poisoning": 28,
+        "morphological_bypass": 28,
+        "rag_context_poisoning": 28,
+        "roleplay_jailbreak": 28,
+        "security_bypass": 28,
+        "sensitive_data_exfiltration": 28,
+        "social_engineering_escalation": 28,
+        "system_prompt_exfiltration": 28,
+        "tool_action_abuse": 28
+      },
+      "safe_categories": {
+        "hard_negative": 210,
+        "benign_daily": 84,
+        "benign_technical": 70,
+        "benign_security": 56
+      }
+    },
+    "validation": {
+      "rows": 180,
+      "labels": {
+        "attack": 90,
+        "safe": 90
+      },
+      "languages": {
+        "tr": 81,
+        "en": 81,
+        "tr-en": 18
+      },
+      "attack_families": {
+        "authority_claim_bypass": 6,
+        "code_switching": 6,
+        "confirmation_trap": 6,
+        "encoding_obfuscation": 6,
+        "indirect_injection": 6,
+        "instruction_override": 6,
+        "memory_context_poisoning": 6,
+        "morphological_bypass": 6,
+        "rag_context_poisoning": 6,
+        "roleplay_jailbreak": 6,
+        "security_bypass": 6,
+        "sensitive_data_exfiltration": 6,
+        "social_engineering_escalation": 6,
+        "system_prompt_exfiltration": 6,
+        "tool_action_abuse": 6
+      },
+      "safe_categories": {
+        "hard_negative": 45,
+        "benign_daily": 18,
+        "benign_technical": 15,
+        "benign_security": 12
+      }
+    },
+    "locked_test": {
+      "rows": 180,
+      "labels": {
+        "attack": 90,
+        "safe": 90
+      },
+      "languages": {
+        "tr": 81,
+        "en": 81,
+        "tr-en": 18
+      },
+      "attack_families": {
+        "authority_claim_bypass": 6,
+        "code_switching": 6,
+        "confirmation_trap": 6,
+        "encoding_obfuscation": 6,
+        "indirect_injection": 6,
+        "instruction_override": 6,
+        "memory_context_poisoning": 6,
+        "morphological_bypass": 6,
+        "rag_context_poisoning": 6,
+        "roleplay_jailbreak": 6,
+        "security_bypass": 6,
+        "sensitive_data_exfiltration": 6,
+        "social_engineering_escalation": 6,
+        "system_prompt_exfiltration": 6,
+        "tool_action_abuse": 6
+      },
+      "safe_categories": {
+        "hard_negative": 45,
+        "benign_daily": 18,
+        "benign_technical": 15,
+        "benign_security": 12
+      }
+    }
+  },
+  "actual": {
+    "train": {
+      "rows": 840,
+      "labels": {
+        "attack": 420,
+        "safe": 420
+      },
+      "languages": {
+        "tr": 378,
+        "en": 378,
+        "tr-en": 84
+      },
+      "attack_families": {
+        "instruction_override": 28,
+        "system_prompt_exfiltration": 28,
+        "authority_claim_bypass": 28,
+        "memory_context_poisoning": 28,
+        "indirect_injection": 28,
+        "confirmation_trap": 28,
+        "encoding_obfuscation": 28,
+        "rag_context_poisoning": 28,
+        "tool_action_abuse": 28,
+        "roleplay_jailbreak": 28,
+        "security_bypass": 28,
+        "morphological_bypass": 28,
+        "social_engineering_escalation": 28,
+        "sensitive_data_exfiltration": 28,
+        "code_switching": 28
+      },
+      "safe_categories": {
+        "hard_negative": 210,
+        "benign_daily": 84,
+        "benign_technical": 70,
+        "benign_security": 56
+      }
+    },
+    "validation": {
+      "rows": 180,
+      "labels": {
+        "attack": 90,
+        "safe": 90
+      },
+      "languages": {
+        "en": 81,
+        "tr-en": 18,
+        "tr": 81
+      },
+      "attack_families": {
+        "sensitive_data_exfiltration": 6,
+        "system_prompt_exfiltration": 6,
+        "security_bypass": 6,
+        "roleplay_jailbreak": 6,
+        "authority_claim_bypass": 6,
+        "memory_context_poisoning": 6,
+        "rag_context_poisoning": 6,
+        "confirmation_trap": 6,
+        "encoding_obfuscation": 6,
+        "morphological_bypass": 6,
+        "code_switching": 6,
+        "instruction_override": 6,
+        "tool_action_abuse": 6,
+        "indirect_injection": 6,
+        "social_engineering_escalation": 6
+      },
+      "safe_categories": {
+        "hard_negative": 45,
+        "benign_daily": 18,
+        "benign_technical": 15,
+        "benign_security": 12
+      }
+    },
+    "locked_test": {
+      "rows": 180,
+      "labels": {
+        "attack": 90,
+        "safe": 90
+      },
+      "languages": {
+        "tr-en": 18,
+        "tr": 81,
+        "en": 81
+      },
+      "attack_families": {
+        "code_switching": 6,
+        "instruction_override": 6,
+        "security_bypass": 6,
+        "roleplay_jailbreak": 6,
+        "authority_claim_bypass": 6,
+        "indirect_injection": 6,
+        "tool_action_abuse": 6,
+        "sensitive_data_exfiltration": 6,
+        "encoding_obfuscation": 6,
+        "morphological_bypass": 6,
+        "social_engineering_escalation": 6,
+        "memory_context_poisoning": 6,
+        "rag_context_poisoning": 6,
+        "confirmation_trap": 6,
+        "system_prompt_exfiltration": 6
+      },
+      "safe_categories": {
+        "hard_negative": 45,
+        "benign_daily": 18,
+        "benign_technical": 15,
+        "benign_security": 12
+      }
+    }
+  },
+  "leakage_checks": {
+    "pair_id_cross_split": 0,
+    "near_duplicate_ge_085_cross_split": 0
+  }
+}

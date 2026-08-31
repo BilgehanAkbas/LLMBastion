@@ -1,0 +1,113 @@
+{
+  "title": "LLMBastion Multilingual Prompt Injection Dataset v1",
+  "type": "object",
+  "required": [
+    "id",
+    "text",
+    "label",
+    "language",
+    "category",
+    "attack_family",
+    "difficulty",
+    "obfuscation",
+    "source",
+    "source_id",
+    "license",
+    "pair_id",
+    "split"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 3
+    },
+    "label": {
+      "enum": [
+        "safe",
+        "attack"
+      ]
+    },
+    "language": {
+      "enum": [
+        "tr",
+        "en",
+        "tr-en"
+      ]
+    },
+    "category": {
+      "enum": [
+        "prompt_injection",
+        "hard_negative",
+        "benign_daily",
+        "benign_technical",
+        "benign_security"
+      ]
+    },
+    "attack_family": {
+      "enum": [
+        "none",
+        "instruction_override",
+        "system_prompt_exfiltration",
+        "security_bypass",
+        "roleplay_jailbreak",
+        "authority_claim_bypass",
+        "memory_context_poisoning",
+        "rag_context_poisoning",
+        "indirect_injection",
+        "tool_action_abuse",
+        "sensitive_data_exfiltration",
+        "confirmation_trap",
+        "encoding_obfuscation",
+        "morphological_bypass",
+        "code_switching",
+        "social_engineering_escalation"
+      ]
+    },
+    "difficulty": {
+      "enum": [
+        "easy",
+        "medium",
+        "hard"
+      ]
+    },
+    "obfuscation": {
+      "enum": [
+        "none",
+        "typo",
+        "spacing",
+        "punctuation",
+        "leetspeak",
+        "unicode",
+        "homoglyph",
+        "encoding",
+        "mixed"
+      ]
+    },
+    "source": {
+      "type": "string"
+    },
+    "source_id": {
+      "type": "string"
+    },
+    "license": {
+      "type": "string"
+    },
+    "pair_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "split": {
+      "enum": [
+        "unassigned",
+        "train",
+        "validation",
+        "locked_test"
+      ]
+    }
+  }
+}

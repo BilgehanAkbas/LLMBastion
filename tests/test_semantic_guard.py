@@ -30,5 +30,5 @@ def test_semantic_guard_returns_probability(tmp_path):
 def test_semantic_guard_missing_model_fails_closed(tmp_path):
     guard = SemanticGuard(tmp_path / "missing.joblib")
 
-    with pytest.raises(RuntimeError, match="train_semantic_guard.py"):
+    with pytest.raises(RuntimeError, match="train_semantic_guard_v2.py"):
         guard.analyze("hello")

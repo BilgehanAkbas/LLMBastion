@@ -1,0 +1,63 @@
+{
+  "dataset_name": "LLMBastion Multilingual Prompt Injection Dataset",
+  "version": "0.1.0-final",
+  "target_total": 1200,
+  "target_attack": 600,
+  "target_safe": 600,
+  "language_targets": {
+    "tr": 540,
+    "en": 540,
+    "tr-en": 120
+  },
+  "split_targets": {
+    "train": 840,
+    "validation": 180,
+    "locked_test": 180
+  },
+  "safe_category_targets": {
+    "hard_negative": 300,
+    "benign_daily": 120,
+    "benign_technical": 100,
+    "benign_security": 80
+  },
+  "attack_family_target_each": 40,
+  "external_benchmarks_reserved": [
+    "AltaySec/turkish-llm-injection",
+    "3nesdeniz/turkish-conversation-prompt-injection test",
+    "beratcmn/turkish-prompt-injections diagnostic only"
+  ],
+  "current_progress": {
+    "rows": 1200,
+    "attack": 600,
+    "safe": 600,
+    "languages": {
+      "tr": 540,
+      "en": 540,
+      "tr-en": 120
+    },
+    "safe_categories": {
+      "hard_negative": 300,
+      "benign_daily": 120,
+      "benign_technical": 100,
+      "benign_security": 80
+    },
+    "attack_families": {
+      "instruction_override": 40,
+      "system_prompt_exfiltration": 40,
+      "authority_claim_bypass": 40,
+      "memory_context_poisoning": 40,
+      "indirect_injection": 40,
+      "confirmation_trap": 40,
+      "encoding_obfuscation": 40,
+      "code_switching": 40,
+      "rag_context_poisoning": 40,
+      "tool_action_abuse": 40,
+      "sensitive_data_exfiltration": 40,
+      "roleplay_jailbreak": 40,
+      "security_bypass": 40,
+      "morphological_bypass": 40,
+      "social_engineering_escalation": 40
+    },
+    "status": "finalized_group_aware_split"
+  }
+}

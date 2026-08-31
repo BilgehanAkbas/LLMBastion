@@ -6,7 +6,7 @@ from pathlib import Path
 import joblib
 
 
-DEFAULT_MODEL_PATH = Path("app/artifacts/semantic_guard.joblib")
+DEFAULT_MODEL_PATH = Path("app/artifacts/semantic_guard_v2.joblib")
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class SemanticGuard:
         if not self.model_path.exists():
             raise RuntimeError(
                 "SemanticGuard model artifact not found. "
-                "Run: python ml/train_semantic_guard.py"
+                "Run: python ml/train_semantic_guard_v2.py"
             )
 
         self._model = joblib.load(self.model_path)

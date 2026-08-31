@@ -1,0 +1,67 @@
+{
+  "dataset_name": "LLMBastion Multilingual Prompt Injection Dataset",
+  "version": "0.1.0-final",
+  "rows": 1200,
+  "labels": {
+    "attack": 600,
+    "safe": 600
+  },
+  "languages": {
+    "tr": 540,
+    "en": 540,
+    "tr-en": 120
+  },
+  "attack_families": {
+    "instruction_override": 40,
+    "system_prompt_exfiltration": 40,
+    "authority_claim_bypass": 40,
+    "memory_context_poisoning": 40,
+    "indirect_injection": 40,
+    "confirmation_trap": 40,
+    "encoding_obfuscation": 40,
+    "code_switching": 40,
+    "rag_context_poisoning": 40,
+    "tool_action_abuse": 40,
+    "sensitive_data_exfiltration": 40,
+    "roleplay_jailbreak": 40,
+    "security_bypass": 40,
+    "morphological_bypass": 40,
+    "social_engineering_escalation": 40
+  },
+  "safe_categories": {
+    "hard_negative": 300,
+    "benign_daily": 120,
+    "benign_technical": 100,
+    "benign_security": 80
+  },
+  "question_ratio_attack": 0.3383,
+  "question_ratio_safe": 0.3317,
+  "question_gap": 0.0067,
+  "avg_words_attack": 15.8,
+  "avg_words_safe": 19.4,
+  "length_gap": 3.6,
+  "potential_first_token_shortcuts": [
+    [
+      "python'da",
+      5,
+      0,
+      5,
+      1.0
+    ],
+    [
+      "suggest",
+      5,
+      0,
+      5,
+      1.0
+    ]
+  ],
+  "exact_duplicate_texts": 0,
+  "splits": {
+    "train": 840,
+    "validation": 180,
+    "locked_test": 180
+  },
+  "status": "finalized_group_aware_split",
+  "split_report": "SPLIT_REPORT.json"
+}

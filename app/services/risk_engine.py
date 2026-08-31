@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from ..policies.input_policy import DEFAULT_BLOCK_THRESHOLD
 
 
-DEFAULT_SEMANTIC_THRESHOLD = 0.40
+DEFAULT_SEMANTIC_THRESHOLD = 0.51  # selected on SemanticGuard v2 validation split
 
 
 @dataclass(frozen=True)

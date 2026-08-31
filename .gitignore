@@ -29,5 +29,7 @@ env/
 .DS_Store
 Thumbs.db
 
+# Generated ML artifacts
 app/artifacts/*.joblib
+app/artifacts/*.metadata.json
 app/artifacts/*_meta.json
