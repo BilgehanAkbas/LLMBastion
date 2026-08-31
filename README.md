@@ -1,8 +1,23 @@
 # LLMBastion
 
-LLMBastion is a prototype **LLM security gateway**. It evaluates incoming prompts before they reach an LLM, combines deterministic and ML-based security signals, applies a risk-based allow/block policy, scans allowed model responses for sensitive data, and stores security telemetry for a local dashboard.
+[![Tests](https://github.com/BilgehanAkbas/LLMBastion/actions/workflows/tests.yml/badge.svg)](https://github.com/BilgehanAkbas/LLMBastion/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## What it does
+LLMBastion is a prototype **LLM security gateway** that combines deterministic rules and machine learning to detect prompt-injection attacks before they reach an LLM, enforce risk-based policy decisions, protect sensitive output data, and provide security observability.
+
+## Highlights
+
+- Hybrid input protection with `RuleGuard` + `SemanticGuard v2`
+- Multilingual prompt-injection detection for Turkish, English, and mixed-language prompts
+- Validation-selected SemanticGuard threshold of `0.51`
+- Held-out evaluation: **F1 0.945**, **Recall 0.956**, **Precision 0.935**
+- Sensitive-output scanning with `DataGuard`
+- Request-level security telemetry and a local dashboard
+- Reproducible model artifact build and GitHub Actions test pipeline
+- Raw prompts and model responses are not stored in audit telemetry
+
+## Architecture
 
 ```text
 User Prompt
@@ -147,7 +162,7 @@ python -m pytest -q
 
 Final local verification: **42 passed**.
 
-GitHub Actions also builds the runtime artifact and runs the test suite on pushes and pull requests.
+GitHub Actions builds the runtime artifact and runs the test suite on pushes and pull requests.
 
 ## Repository layout
 
@@ -172,3 +187,7 @@ LLMBastion is a prototype, not a complete prompt-injection defense.
 ## Background
 
 The project was motivated in part by [Yapay Zeka Ajanları Şirketleri Nasıl Hackliyor](https://medium.com/@bilgehanakbas/yapay-zeka-ajanlar%C4%B1-%C5%9Firketleri-nas%C4%B1l-hackliyor-b6e0308b7cea), an article on the security risks around AI agents.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
