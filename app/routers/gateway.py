@@ -54,6 +54,7 @@ class ChatResponse(BaseModel):
     triggered_detectors: tuple[str, ...]
     output_action: OutputAction | None = None
     output_findings: tuple[str, ...] = ()
+    output_redaction_count: int = 0
     response: str | None = None
 
 
@@ -157,11 +158,17 @@ async def chat(request: ChatRequest, db: db_dependency):
         time.perf_counter() - output_guard_started
     ) * 1000
 
+    # Audit stores only metadata about findings. Sensitive values and raw model
+    # output are intentionally excluded.
     detector_results.append(
         {
             "detector_name": "data_guard",
             "score": 1.0 if output_result.findings else 0.0,
-            "evidence": list(output_result.findings),
+            "evidence": {
+                "action": output_result.action.value,
+                "finding_types": list(output_result.findings),
+                "redaction_count": output_result.redaction_count,
+            },
             "latency_ms": output_guard_latency_ms,
         }
     )
@@ -188,5 +195,6 @@ async def chat(request: ChatRequest, db: db_dependency):
         triggered_detectors=assessment.triggered_detectors,
         output_action=output_result.action,
         output_findings=output_result.findings,
+        output_redaction_count=output_result.redaction_count,
         response=output_result.text,
     )

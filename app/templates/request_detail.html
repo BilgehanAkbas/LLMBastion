@@ -10,7 +10,7 @@
         <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">ACTION</small>{% if gateway_request.action == 'BLOCK' %}<strong class="text-danger">BLOCK</strong>{% else %}<strong class="text-success">ALLOW</strong>{% endif %}</div></div>
         <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">RISK SCORE</small><strong>{{ "%.2f"|format(gateway_request.risk_score) }}</strong></div></div>
         <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">TOTAL LATENCY</small><strong>{{ "%.2f"|format(gateway_request.latency_ms) }} ms</strong></div></div>
-        <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">CREATED</small><span>{{ gateway_request.created_at }}</span></div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">CREATED</small><span>{{ created_at_display }} <small class="text-muted">TRT</small></span></div></div>
     </div>
 
     <div class="card mb-4">
@@ -54,7 +54,28 @@
             {% elif detector.name == 'semantic_guard' %}
                 <p class="mb-0 text-muted">SemanticGuard returns the ML attack probability. A score at or above the threshold triggers the detector.</p>
             {% elif detector.name == 'data_guard' %}
-                {% if detector.findings %}{% for item in detector.findings %}<span class="badge badge-warning mr-1">{{ item }}</span>{% endfor %}{% else %}<span class="text-muted">No sensitive output findings.</span>{% endif %}
+                <div class="row mb-3">
+                    <div class="col-sm-6 mb-2">
+                        <div class="detail-label">Output Action</div>
+                        {% if detector.output_action == 'REDACT' %}
+                        <span class="badge badge-warning">REDACT</span>
+                        {% else %}
+                        <span class="badge badge-success">PASS</span>
+                        {% endif %}
+                    </div>
+                    <div class="col-sm-6 mb-2">
+                        <div class="detail-label">Redactions</div>
+                        <strong>{{ detector.redaction_count }}</strong>
+                    </div>
+                </div>
+                {% if detector.findings %}
+                    {% for item in detector.findings %}
+                    <span class="badge badge-warning mr-1">{{ item }}</span>
+                    {% endfor %}
+                {% else %}
+                    <span class="text-muted">No sensitive output findings.</span>
+                {% endif %}
+                <p class="small text-muted mt-3 mb-0">Only finding metadata is stored. Sensitive values and raw model output are not persisted in audit telemetry.</p>
             {% else %}
                 {% if detector.findings %}{% for item in detector.findings %}<span class="badge badge-secondary mr-1">{{ item }}</span>{% endfor %}{% else %}<span class="text-muted">No findings.</span>{% endif %}
             {% endif %}

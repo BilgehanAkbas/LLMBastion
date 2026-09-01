@@ -38,7 +38,11 @@ def test_audit_saves_multiple_detector_results():
             {
                 "detector_name": "data_guard",
                 "score": 1.0,
-                "evidence": ["email"],
+                "evidence": {
+                    "action": "REDACT",
+                    "finding_types": ["email"],
+                    "redaction_count": 1,
+                },
                 "latency_ms": 0.1,
             },
         ],
@@ -55,4 +59,40 @@ def test_audit_saves_multiple_detector_results():
     assert len(detector_records) == 2
     assert detector_records[0].detector_name == "rule_guard"
     assert detector_records[1].detector_name == "data_guard"
-    assert json.loads(detector_records[1].evidence) == ["email"]
+
+    evidence = json.loads(detector_records[1].evidence)
+    assert evidence == {
+        "action": "REDACT",
+        "finding_types": ["email"],
+        "redaction_count": 1,
+    }
+
+
+def test_data_guard_audit_evidence_contains_no_raw_secret():
+    db = make_session()
+    raw_secret = "user@example.com"
+
+    save_request_audit(
+        db,
+        request_id="privacy-test-id",
+        risk_score=0.0,
+        action="ALLOW",
+        latency_ms=1.0,
+        detector_results=[
+            {
+                "detector_name": "data_guard",
+                "score": 1.0,
+                "evidence": {
+                    "action": "REDACT",
+                    "finding_types": ["email"],
+                    "redaction_count": 1,
+                },
+                "latency_ms": 0.1,
+            },
+        ],
+    )
+
+    row = db.query(DetectorResult).one()
+
+    assert raw_secret not in (row.evidence or "")
+    assert "email" in (row.evidence or "")

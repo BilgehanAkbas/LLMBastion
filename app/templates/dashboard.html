@@ -56,7 +56,7 @@
                 </td>
                 <td>{% if item.request.action == 'BLOCK' %}<span class="badge badge-danger">BLOCK</span>{% else %}<span class="badge badge-success">ALLOW</span>{% endif %}</td>
                 <td>{{ "%.2f"|format(item.request.latency_ms) }} ms</td>
-                <td>{{ item.request.created_at }}</td>
+                <td>{{ item.created_at_display }} <small class="text-muted">TRT</small></td>
             </tr>
             {% else %}
             <tr><td colspan="8" class="text-center text-muted py-4">No gateway requests logged yet.</td></tr>
