@@ -1,0 +1,119 @@
+{% extends "layout.html" %}
+
+{% block title %}Playground - LLMBastion{% endblock %}
+
+{% block extra_head %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', path='css/playground.css') }}"
+>
+{% endblock %}
+
+{% block content %}
+<div class="playground-shell">
+    <aside class="security-sidebar">
+        <div>
+            <div class="eyebrow">SECURE LLM GATEWAY</div>
+            <h1>LLMBastion</h1>
+            <p class="sidebar-copy">
+                Send prompts through the same security pipeline used by the API.
+            </p>
+        </div>
+
+        <div class="guard-stack">
+            <div class="guard-row">
+                <span class="guard-dot"></span>
+                <div>
+                    <strong>RuleGuard</strong>
+                    <small>Deterministic injection rules</small>
+                </div>
+            </div>
+            <div class="guard-row">
+                <span class="guard-dot"></span>
+                <div>
+                    <strong>SemanticGuard</strong>
+                    <small>ML prompt-injection detection</small>
+                </div>
+            </div>
+            <div class="guard-row">
+                <span class="guard-dot"></span>
+                <div>
+                    <strong>DataGuard</strong>
+                    <small>Sensitive output redaction</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-links">
+            {% if request.app.state.is_development %}
+            <a href="/dashboard">Open Security Dashboard →</a>
+            <a href="/docs">Open API Docs →</a>
+            {% endif %}
+            <a
+                href="https://github.com/BilgehanAkbas/LLMBastion"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                View Source on GitHub →
+            </a>
+        </div>
+    </aside>
+
+    <section class="chat-panel" aria-label="LLMBastion chat playground">
+        <header class="chat-header">
+            <div>
+                <h2>Security Playground</h2>
+                <p>Chat through LLMBastion, not directly with the provider.</p>
+            </div>
+            <span class="status-pill">
+                <span class="status-dot"></span>
+                Protected
+            </span>
+        </header>
+
+        <div id="messages" class="message-list" aria-live="polite">
+            <div class="message assistant-message">
+                <div class="message-avatar">LB</div>
+                <div class="message-content">
+                    <div class="message-label">LLMBastion</div>
+                    <div class="message-bubble">
+                        Send a normal prompt or try a prompt-injection attempt.
+                        I will show whether the gateway allowed, blocked, or
+                        redacted the request.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="composer-wrap">
+            <div class="composer">
+                <textarea
+                    id="promptInput"
+                    maxlength="4000"
+                    rows="1"
+                    placeholder="Message LLMBastion..."
+                    aria-label="Prompt"
+                ></textarea>
+                <button
+                    id="sendButton"
+                    class="send-button"
+                    type="button"
+                    aria-label="Send prompt"
+                >
+                    ↑
+                </button>
+            </div>
+            <div class="composer-meta">
+                <span>Enter to send · Shift+Enter for new line</span>
+                <span id="characterCount">0 / 4000</span>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+<script src="{{ url_for('static', path='js/playground.js') }}"></script>
+{% endblock %}

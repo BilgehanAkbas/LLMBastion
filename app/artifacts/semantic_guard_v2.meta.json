@@ -1,0 +1,7 @@
+{
+  "artifact_format": 1,
+  "semantic_guard_version": "v2",
+  "scikit_learn_version": "1.9.0",
+  "training_rows": 840,
+  "model_type": "word_tfidf_logistic_regression"
+}

@@ -47,9 +47,9 @@
                     {% if item is mapping %}<div class="border-bottom pb-2 mb-2">
                         {% if item.rule_id is defined %}<div><strong>Rule:</strong> <code>{{ item.rule_id }}</code></div>{% endif %}
                         {% if item.weight is defined %}<div><strong>Weight:</strong> {{ item.weight }}</div>{% endif %}
-                        {% if item.matched_text is defined %}<div><strong>Matched:</strong> <code>{{ item.matched_text }}</code></div>{% endif %}
                     </div>{% endif %}
                     {% endfor %}
+                    <p class="small text-muted mb-0">Matched prompt text is intentionally not persisted in audit telemetry.</p>
                 {% else %}<span class="text-muted">No regex rule matched.</span>{% endif %}
             {% elif detector.name == 'semantic_guard' %}
                 <p class="mb-0 text-muted">SemanticGuard returns the ML attack probability. A score at or above the threshold triggers the detector.</p>
@@ -99,6 +99,6 @@
         </div>
     </div>
 
-    <div class="alert alert-light border mt-4">Raw prompts and model responses are not stored in audit telemetry.</div>
+    <div class="alert alert-light border mt-4">Audit telemetry stores detector metadata only. Raw prompts and model responses are not persisted.</div>
 </div>
 {% endblock %}

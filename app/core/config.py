@@ -4,6 +4,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+APP_ENV = (
+    os.getenv("APP_ENV", "development")
+    .strip()
+    .lower()
+)
+
+if APP_ENV not in {"development", "production"}:
+    raise ValueError(
+        "APP_ENV must be either 'development' or 'production'"
+    )
+
+IS_DEVELOPMENT = APP_ENV == "development"
+IS_PRODUCTION = APP_ENV == "production"
+
+
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")

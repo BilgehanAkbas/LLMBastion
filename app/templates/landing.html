@@ -1,0 +1,168 @@
+{% extends "layout.html" %}
+
+{% block title %}LLMBastion - Secure LLM Gateway{% endblock %}
+
+{% block extra_head %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', path='css/landing.css') }}"
+>
+{% endblock %}
+
+{% block content %}
+<section class="landing-hero">
+    <div class="hero-copy">
+        <div class="landing-eyebrow">LLM SECURITY GATEWAY</div>
+        <h1>
+            Put a security layer
+            <span>between users and your LLM.</span>
+        </h1>
+        <p class="hero-lead">
+            LLMBastion detects prompt-injection attempts before they
+            reach the model, applies risk-based policy, and redacts
+            supported sensitive data from model output.
+        </p>
+
+        <div class="hero-actions">
+            <a class="btn-primary-landing" href="/playground">
+                Try the Playground
+            </a>
+            <a
+                class="btn-secondary-landing"
+                href="https://github.com/BilgehanAkbas/LLMBastion"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                View on GitHub
+            </a>
+        </div>
+
+        <div class="hero-note">
+            No account required for the local/public playground demo.
+        </div>
+    </div>
+
+    <div class="hero-visual" aria-label="LLMBastion security flow">
+        <div class="flow-node flow-user">User Prompt</div>
+        <div class="flow-arrow">↓</div>
+
+        <div class="flow-guards">
+            <div class="flow-node">
+                <strong>RuleGuard</strong>
+                <small>Deterministic rules</small>
+            </div>
+            <div class="flow-node">
+                <strong>SemanticGuard</strong>
+                <small>ML detection</small>
+            </div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+        <div class="flow-node flow-risk">RiskEngine + Policy</div>
+        <div class="flow-arrow">↓</div>
+
+        <div class="flow-split">
+            <div class="flow-node flow-block">
+                BLOCK
+                <small>Provider skipped</small>
+            </div>
+            <div class="flow-node flow-allow">
+                ALLOW
+                <small>Send to provider</small>
+            </div>
+        </div>
+
+        <div class="flow-arrow flow-arrow-right">↓</div>
+        <div class="flow-node flow-data">
+            DataGuard
+            <small>Output redaction</small>
+        </div>
+    </div>
+</section>
+
+<section class="feature-section">
+    <div class="section-heading">
+        <div class="landing-eyebrow">DEFENSE IN DEPTH</div>
+        <h2>Three layers, one gateway.</h2>
+    </div>
+
+    <div class="feature-grid">
+        <article class="feature-card">
+            <div class="feature-number">01</div>
+            <h3>RuleGuard</h3>
+            <p>
+                Fast deterministic detection for known override,
+                jailbreak, extraction, and bypass patterns.
+            </p>
+        </article>
+
+        <article class="feature-card">
+            <div class="feature-number">02</div>
+            <h3>SemanticGuard</h3>
+            <p>
+                Multilingual TF-IDF + Logistic Regression detection
+                for Turkish, English, and mixed-language prompts.
+            </p>
+        </article>
+
+        <article class="feature-card">
+            <div class="feature-number">03</div>
+            <h3>DataGuard</h3>
+            <p>
+                Deterministic redaction for supported credentials,
+                tokens, IBANs, cards, emails, and other output formats.
+            </p>
+        </article>
+    </div>
+</section>
+
+<section class="metrics-section">
+    <div class="metric">
+        <strong>0.945</strong>
+        <span>Held-out F1</span>
+    </div>
+    <div class="metric">
+        <strong>0.956</strong>
+        <span>Held-out Recall</span>
+    </div>
+    <div class="metric">
+        <strong>1,200</strong>
+        <span>Synthetic dataset rows</span>
+    </div>
+    <div class="metric">
+        <strong>3</strong>
+        <span>Security stages</span>
+    </div>
+</section>
+
+<section class="demo-section">
+    <div>
+        <div class="landing-eyebrow">TRY IT</div>
+        <h2>See the gateway make the decision.</h2>
+        <p>
+            Send a normal question or a prompt-injection attempt.
+            The Playground shows ALLOW/BLOCK, risk scores, provider
+            status, and DataGuard output metadata.
+        </p>
+    </div>
+    <a class="btn-primary-landing" href="/playground">
+        Open Playground →
+    </a>
+</section>
+
+{% if request.app.state.is_development %}
+<section class="developer-panel">
+    <div>
+        <strong>Development tools are enabled</strong>
+        <span>
+            These routes are not registered when APP_ENV=production.
+        </span>
+    </div>
+    <div class="developer-links">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/docs">API Docs</a>
+        <a href="/openapi.json">OpenAPI JSON</a>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

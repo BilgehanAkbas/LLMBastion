@@ -1,25 +1,39 @@
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <a class="navbar-brand" href="/dashboard">LLMBastion</a>
+<nav class="navbar navbar-expand-lg llm-navbar">
+    <a class="navbar-brand llm-brand" href="/">
+        <span class="llm-brand-mark">LB</span>
+        <span>LLMBastion</span>
+    </a>
 
-    <button
-        class="navbar-toggler"
-        type="button"
-        data-toggle="collapse"
-        data-target="#navbarContent"
-        aria-controls="navbarContent"
-        aria-expanded="false"
-        aria-label="Toggle navigation"
-    >
-        <span class="navbar-toggler-icon"></span>
+    <button class="navbar-toggler" type="button" data-toggle="collapse"
+        data-target="#navbarContent" aria-controls="navbarContent"
+        aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon">☰</span>
     </button>
 
     <div class="collapse navbar-collapse" id="navbarContent">
-        <ul class="navbar-nav mr-auto">
+        <ul class="navbar-nav ml-auto align-items-lg-center">
             <li class="nav-item">
-                <a class="nav-link" href="/dashboard">Dashboard</a>
+                <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">Home</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="/docs">API Docs</a>
+                <a class="nav-link {% if request.url.path.startswith('/playground') %}active{% endif %}" href="/playground">Playground</a>
+            </li>
+            {% if request.app.state.is_development %}
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle developer-nav" href="#"
+                    id="developerMenu" role="button" data-toggle="dropdown"
+                    aria-haspopup="true" aria-expanded="false">Developer</a>
+                <div class="dropdown-menu dropdown-menu-right" aria-labelledby="developerMenu">
+                    <a class="dropdown-item" href="/dashboard">Security Dashboard</a>
+                    <a class="dropdown-item" href="/docs">API Docs</a>
+                    <a class="dropdown-item" href="/openapi.json">OpenAPI JSON</a>
+                </div>
+            </li>
+            {% endif %}
+            <li class="nav-item">
+                <a class="nav-link github-nav"
+                    href="https://github.com/BilgehanAkbas/LLMBastion"
+                    target="_blank" rel="noopener noreferrer">GitHub ↗</a>
             </li>
         </ul>
     </div>
