@@ -1,34 +1,72 @@
+import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from .core.config import (
     APP_ENV,
+    GROQ_API_KEY,
+    LLM_PROVIDER,
+    MAX_REQUEST_BODY_BYTES,
     RATE_LIMIT_REQUESTS,
     RATE_LIMIT_WINDOW_SECONDS,
 )
-from .database import engine
+from .core.errors import install_error_handlers
+from .database import SessionLocal, engine
 from .models import Base
 from .routers.dashboard import router as dashboard_router
-from .routers.gateway import router as gateway_router
+from .routers.gateway import (
+    router as gateway_router,
+    semantic_guard,
+)
 from .routers.playground import router as playground_router
 from .routers.public import router as public_router
 from .services.rate_limiter import (
     ChatRateLimitMiddleware,
     FixedWindowRateLimiter,
 )
+from .services.request_size import RequestBodyLimitMiddleware
+from .services.security_headers import SecurityHeadersMiddleware
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 
 
-def create_app(app_env: str = APP_ENV) -> FastAPI:
+def _check_database_ready() -> None:
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+    finally:
+        db.close()
+
+
+def _check_provider_configuration() -> None:
+    # Groq is the only implemented provider today. This is intentionally a
+    # local configuration check; /ready never makes a paid/network LLM call.
+    if LLM_PROVIDER == "groq" and not GROQ_API_KEY:
+        raise RuntimeError(
+            "GROQ_API_KEY is not configured"
+        )
+
+
+def create_app(
+    app_env: str = APP_ENV,
+    *,
+    max_request_body_bytes: int = MAX_REQUEST_BODY_BYTES,
+) -> FastAPI:
     normalized_env = app_env.strip().lower()
     if normalized_env not in {"development", "production"}:
         raise ValueError(
             "app_env must be either 'development' or 'production'"
+        )
+    if max_request_body_bytes < 1:
+        raise ValueError(
+            "max_request_body_bytes must be at least 1"
         )
 
     is_development = normalized_env == "development"
@@ -50,13 +88,29 @@ def create_app(app_env: str = APP_ENV) -> FastAPI:
 
     application.state.app_env = normalized_env
     application.state.is_development = is_development
+    application.state.max_request_body_bytes = (
+        max_request_body_bytes
+    )
 
+    install_error_handlers(application)
+
+    # add_middleware inserts new middleware outside previous user middleware.
+    # Desired request order:
+    # Security headers -> rate limit -> body limit -> FastAPI routes.
+    application.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_bytes=max_request_body_bytes,
+    )
     application.add_middleware(
         ChatRateLimitMiddleware,
         limiter=FixedWindowRateLimiter(
             limit=RATE_LIMIT_REQUESTS,
             window_seconds=RATE_LIMIT_WINDOW_SECONDS,
         ),
+    )
+    application.add_middleware(
+        SecurityHeadersMiddleware,
+        is_development=is_development,
     )
 
     application.mount(
@@ -67,13 +121,57 @@ def create_app(app_env: str = APP_ENV) -> FastAPI:
 
     Base.metadata.create_all(bind=engine)
 
+    @application.get("/favicon.ico", include_in_schema=False)
+    def legacy_favicon():
+        # Browsers commonly probe /favicon.ico even when an SVG favicon is
+        # declared in HTML. Redirect to the canonical static SVG.
+        return RedirectResponse(
+            url="/static/favicon.svg",
+            status_code=307,
+        )
+
     @application.get("/health")
     def health():
+        # Liveness only: process is running and can serve HTTP.
         return {
             "status": "ok",
             "service": "LLMBastion",
             "version": "0.2.0",
             "environment": normalized_env,
+        }
+
+    @application.get("/ready")
+    def ready():
+        # Readiness verifies local dependencies/configuration without making
+        # an external provider request.
+        try:
+            _check_database_ready()
+            semantic_guard.ensure_ready()
+            _check_provider_configuration()
+        except Exception as exc:
+            logger.error(
+                "Readiness check failed",
+                exc_info=(
+                    type(exc),
+                    exc,
+                    exc.__traceback__,
+                ),
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Readiness check failed",
+            ) from exc
+
+        return {
+            "status": "ready",
+            "service": "LLMBastion",
+            "version": "0.2.0",
+            "environment": normalized_env,
+            "checks": {
+                "database": "ok",
+                "semantic_guard": "ok",
+                "provider_config": "ok",
+            },
         }
 
     application.include_router(public_router)

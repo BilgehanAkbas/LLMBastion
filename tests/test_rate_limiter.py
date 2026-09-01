@@ -109,7 +109,11 @@ def test_chat_middleware_returns_429_and_rate_headers():
 
     assert second.status_code == 429
     assert second.json() == {
-        "detail": "Rate limit exceeded"
+        "detail": "Rate limit exceeded",
+        "error": {
+            "code": "rate_limit_exceeded",
+            "message": "Rate limit exceeded",
+        },
     }
     assert second.headers["X-RateLimit-Limit"] == "1"
     assert second.headers["X-RateLimit-Remaining"] == "0"

@@ -131,4 +131,37 @@ textarea {
     .llm-navbar { padding: 10px 16px; }
     .llm-navbar .nav-link { margin-left: 0; padding: 9px 2px !important; }
     .llm-navbar .nav-link.active::after { display: none; }
+    
+/* Final navbar override */
+.llm-navbar {
+    min-height: 64px !important;
+    padding: 0 24px !important;
+    background: #111827 !important;
+    border-bottom: 1px solid rgba(148, 163, 184, .16) !important;
+}
+
+.llm-navbar .llm-brand,
+.llm-navbar .navbar-brand {
+    color: #ffffff !important;
+}
+
+.llm-navbar .nav-link {
+    color: #94a3b8 !important;
+}
+
+.llm-navbar .nav-link:hover,
+.llm-navbar .nav-link.active,
+.llm-navbar .developer-nav {
+    color: #ffffff !important;
+}
+
+.llm-navbar .github-nav {
+    color: #cbd5e1 !important;
+}
+
+.llm-navbar .navbar-toggler {
+    border-color: rgba(255, 255, 255, .2) !important;
+    color: #ffffff !important;
+}
+
 }

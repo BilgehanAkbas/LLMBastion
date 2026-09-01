@@ -8,6 +8,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from ..core.errors import build_error_body
+
 
 @dataclass(frozen=True)
 class RateLimitDecision:
@@ -73,7 +75,6 @@ class FixedWindowRateLimiter:
             count += 1
             self._buckets[key] = (window_start, count)
 
-            # Bound stale-key growth for long-running single-process use.
             if len(self._buckets) > 1024:
                 stale_before = now - self.window_seconds
                 self._buckets = {
@@ -118,7 +119,7 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Deliberately use the socket peer address. X-Forwarded-For is not
-        # trusted unless a deployment has a configured trusted proxy layer.
+        # trusted unless deployment has a configured trusted proxy layer.
         client_key = (
             request.client.host
             if request.client is not None
@@ -142,9 +143,10 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
             )
             return JSONResponse(
                 status_code=429,
-                content={
-                    "detail": "Rate limit exceeded"
-                },
+                content=build_error_body(
+                    "rate_limit_exceeded",
+                    "Rate limit exceeded",
+                ),
                 headers=headers,
             )
 

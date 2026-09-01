@@ -149,20 +149,4 @@
         Open Playground →
     </a>
 </section>
-
-{% if request.app.state.is_development %}
-<section class="developer-panel">
-    <div>
-        <strong>Development tools are enabled</strong>
-        <span>
-            These routes are not registered when APP_ENV=production.
-        </span>
-    </div>
-    <div class="developer-links">
-        <a href="/dashboard">Dashboard</a>
-        <a href="/docs">API Docs</a>
-        <a href="/openapi.json">OpenAPI JSON</a>
-    </div>
-</section>
-{% endif %}
 {% endblock %}

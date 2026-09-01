@@ -30,10 +30,17 @@ RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "30"))
 RATE_LIMIT_WINDOW_SECONDS = int(
     os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")
 )
+MAX_REQUEST_BODY_BYTES = int(
+    os.getenv("MAX_REQUEST_BODY_BYTES", "32768")
+)
 
 if RATE_LIMIT_REQUESTS < 1:
     raise ValueError("RATE_LIMIT_REQUESTS must be at least 1")
 if RATE_LIMIT_WINDOW_SECONDS < 1:
     raise ValueError(
         "RATE_LIMIT_WINDOW_SECONDS must be at least 1"
+    )
+if MAX_REQUEST_BODY_BYTES < 1024:
+    raise ValueError(
+        "MAX_REQUEST_BODY_BYTES must be at least 1024"
     )

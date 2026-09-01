@@ -115,8 +115,6 @@ class SemanticGuard:
             )
 
         # Validate metadata before unpickling the sklearn artifact.
-        # This prevents known incompatible sklearn versions from
-        # reaching inference and failing with opaque AttributeErrors.
         self._validate_runtime_compatibility()
 
         try:
@@ -134,6 +132,10 @@ class SemanticGuard:
             )
 
         return self._model
+
+    def ensure_ready(self) -> None:
+        """Load and validate the runtime artifact without scoring input."""
+        self._load_model()
 
     def analyze(self, text: str) -> SemanticGuardResult:
         if not isinstance(text, str):
