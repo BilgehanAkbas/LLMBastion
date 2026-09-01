@@ -61,6 +61,10 @@ def _detector_view(row: DetectorResult) -> dict:
     evidence = _parse_evidence(row.evidence)
     threshold = _threshold_for(row.detector_name)
 
+    provider_name = None
+    provider_status = None
+    provider_error_type = None
+
     if row.detector_name == "data_guard":
         # DataGuard protects output after the input decision. Its findings must
         # never be reconstructed as input-policy triggers.
@@ -80,6 +84,16 @@ def _detector_view(row: DetectorResult) -> dict:
             if isinstance(evidence, dict)
             else len(findings)
         )
+    elif row.detector_name == "provider":
+        triggered = False
+        findings = []
+        output_action = None
+        redaction_count = 0
+
+        if isinstance(evidence, dict):
+            provider_name = evidence.get("provider")
+            provider_status = evidence.get("status")
+            provider_error_type = evidence.get("error_type")
     else:
         if isinstance(evidence, dict):
             stored_triggered = evidence.get("triggered")
@@ -131,6 +145,9 @@ def _detector_view(row: DetectorResult) -> dict:
         "margin": margin,
         "output_action": output_action,
         "redaction_count": redaction_count,
+        "provider_name": provider_name,
+        "provider_status": provider_status,
+        "provider_error_type": provider_error_type,
     }
 
 
@@ -161,6 +178,12 @@ def dashboard(
     blocked_requests = (
         db.query(func.count(GatewayRequest.id))
         .filter(GatewayRequest.action == "BLOCK")
+        .scalar()
+        or 0
+    )
+    error_requests = (
+        db.query(func.count(GatewayRequest.id))
+        .filter(GatewayRequest.action == "ERROR")
         .scalar()
         or 0
     )
@@ -248,6 +271,7 @@ def dashboard(
             "total_requests": total_requests,
             "allowed_requests": allowed_requests,
             "blocked_requests": blocked_requests,
+            "error_requests": error_requests,
             "blocked_rate": blocked_rate,
             "semantic_only_blocks_recent": (
                 semantic_only_blocks
@@ -296,7 +320,7 @@ def request_detail(
         detector["name"]
         for detector in detectors
         if (
-            detector["name"] != "data_guard"
+            detector["name"] not in ("data_guard", "provider")
             and detector["triggered"]
         )
     ]
@@ -310,7 +334,7 @@ def request_detail(
         - detector_latency_ms,
         0.0,
     )
-    provider_called = "data_guard" in detector_map
+    provider_called = "provider" in detector_map
 
     if gateway_request.action == "BLOCK":
         if triggered_detectors:
@@ -325,6 +349,12 @@ def request_detail(
                 "threshold match could be reconstructed "
                 "from audit data."
             )
+    elif gateway_request.action == "ERROR":
+        decision_reason = (
+            "Input policy allowed the request, but the "
+            "configured LLM provider failed before a safe "
+            "response could be returned."
+        )
     else:
         decision_reason = (
             "Allowed because no input detector crossed "

@@ -6,10 +6,18 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse
 
+from .core.config import (
+    RATE_LIMIT_REQUESTS,
+    RATE_LIMIT_WINDOW_SECONDS,
+)
 from .database import engine
 from .models import Base
 from .routers.dashboard import router as dashboard_router
 from .routers.gateway import router as gateway_router
+from .services.rate_limiter import (
+    ChatRateLimitMiddleware,
+    FixedWindowRateLimiter,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -18,6 +26,14 @@ app = FastAPI(
     description="LLM security gateway for prompt and output protection.",
     version="0.2.0",
     docs_url=None,
+)
+
+app.add_middleware(
+    ChatRateLimitMiddleware,
+    limiter=FixedWindowRateLimiter(
+        limit=RATE_LIMIT_REQUESTS,
+        window_seconds=RATE_LIMIT_WINDOW_SECONDS,
+    ),
 )
 
 app.mount(
@@ -51,7 +67,7 @@ def custom_swagger_docs():
     )
 
     html = swagger.body.decode("utf-8")
-    dashboard_button = '''
+    dashboard_button = """
     <a
         href="/dashboard"
         style="
@@ -71,8 +87,11 @@ def custom_swagger_docs():
     >
         ← Dashboard
     </a>
-    '''
-    html = html.replace("</body>", f"{dashboard_button}</body>")
+    """
+    html = html.replace(
+        "</body>",
+        f"{dashboard_button}</body>",
+    )
 
     return HTMLResponse(content=html)
 

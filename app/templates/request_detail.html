@@ -7,7 +7,7 @@
     <p class="text-muted request-id">{{ gateway_request.request_id }}</p>
 
     <div class="row mb-4">
-        <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">ACTION</small>{% if gateway_request.action == 'BLOCK' %}<strong class="text-danger">BLOCK</strong>{% else %}<strong class="text-success">ALLOW</strong>{% endif %}</div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">ACTION</small>{% if gateway_request.action == 'BLOCK' %}<strong class="text-danger">BLOCK</strong>{% elif gateway_request.action == 'ERROR' %}<strong class="text-warning">ERROR</strong>{% else %}<strong class="text-success">ALLOW</strong>{% endif %}</div></div>
         <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">RISK SCORE</small><strong>{{ "%.2f"|format(gateway_request.risk_score) }}</strong></div></div>
         <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">TOTAL LATENCY</small><strong>{{ "%.2f"|format(gateway_request.latency_ms) }} ms</strong></div></div>
         <div class="col-md-3 mb-2"><div class="card p-3 h-100"><small class="text-muted">CREATED</small><span>{{ created_at_display }} <small class="text-muted">TRT</small></span></div></div>
@@ -53,6 +53,13 @@
                 {% else %}<span class="text-muted">No regex rule matched.</span>{% endif %}
             {% elif detector.name == 'semantic_guard' %}
                 <p class="mb-0 text-muted">SemanticGuard returns the ML attack probability. A score at or above the threshold triggers the detector.</p>
+            {% elif detector.name == 'provider' %}
+                <div class="row">
+                    <div class="col-sm-4 mb-2"><div class="detail-label">Provider</div><strong>{{ detector.provider_name or 'unknown' }}</strong></div>
+                    <div class="col-sm-4 mb-2"><div class="detail-label">Status</div>{% if detector.provider_status == 'SUCCESS' %}<span class="badge badge-success">SUCCESS</span>{% else %}<span class="badge badge-warning">{{ detector.provider_status or 'UNKNOWN' }}</span>{% endif %}</div>
+                    <div class="col-sm-4 mb-2"><div class="detail-label">Error Type</div><strong>{{ detector.provider_error_type or '—' }}</strong></div>
+                </div>
+                <p class="small text-muted mt-2 mb-0">Provider telemetry stores status metadata only; no raw provider response is persisted.</p>
             {% elif detector.name == 'data_guard' %}
                 <div class="row mb-3">
                     <div class="col-sm-6 mb-2">
@@ -87,7 +94,7 @@
         <div class="card-header"><strong>Latency Breakdown</strong></div>
         <div class="card-body">
             {% for detector in detectors %}<div class="d-flex justify-content-between border-bottom py-2"><span>{{ detector.name }}</span><strong>{{ "%.3f"|format(detector.latency_ms) }} ms</strong></div>{% endfor %}
-            <div class="d-flex justify-content-between border-bottom py-2"><span>Provider / framework / audit overhead <small class="text-muted">(estimated)</small></span><strong>{{ "%.3f"|format(other_latency_ms) }} ms</strong></div>
+            <div class="d-flex justify-content-between border-bottom py-2"><span>Framework / audit overhead <small class="text-muted">(estimated)</small></span><strong>{{ "%.3f"|format(other_latency_ms) }} ms</strong></div>
             <div class="d-flex justify-content-between pt-2"><span>Total</span><strong>{{ "%.3f"|format(gateway_request.latency_ms) }} ms</strong></div>
         </div>
     </div>

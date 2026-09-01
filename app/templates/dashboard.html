@@ -14,6 +14,7 @@
         ('Total Requests', total_requests, ''),
         ('Allowed', allowed_requests, ''),
         ('Blocked', blocked_requests, '%.1f%% block rate'|format(blocked_rate)),
+        ('Errors', error_requests, 'provider / gateway failures'),
         ('Avg. Latency', '%.2f ms'|format(average_latency_ms), ''),
         ('DataGuard Findings', data_guard_findings, ''),
         ('Semantic-only Blocks', semantic_only_blocks_recent, 'among last 20 requests'),
@@ -54,7 +55,7 @@
                         {% for detector in item.triggered_by %}<span class="badge badge-dark mr-1">{{ detector }}</span>{% endfor %}
                     {% else %}<span class="text-muted">None</span>{% endif %}
                 </td>
-                <td>{% if item.request.action == 'BLOCK' %}<span class="badge badge-danger">BLOCK</span>{% else %}<span class="badge badge-success">ALLOW</span>{% endif %}</td>
+                <td>{% if item.request.action == 'BLOCK' %}<span class="badge badge-danger">BLOCK</span>{% elif item.request.action == 'ERROR' %}<span class="badge badge-warning">ERROR</span>{% else %}<span class="badge badge-success">ALLOW</span>{% endif %}</td>
                 <td>{{ "%.2f"|format(item.request.latency_ms) }} ms</td>
                 <td>{{ item.created_at_display }} <small class="text-muted">TRT</small></td>
             </tr>

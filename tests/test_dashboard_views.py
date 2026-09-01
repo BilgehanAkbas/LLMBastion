@@ -103,3 +103,36 @@ def test_dashboard_time_treats_sqlite_naive_value_as_utc():
     value = datetime(2026, 9, 1, 9, 29, 51)
 
     assert _format_dashboard_time(value) == "2026-09-01 12:29:51"
+
+
+def test_provider_dashboard_view_reads_success_metadata():
+    detector = _detector_view(make_detector(
+        "provider",
+        0.0,
+        {
+            "provider": "groq",
+            "status": "SUCCESS",
+        },
+    ))
+
+    assert detector["triggered"] is False
+    assert detector["threshold"] is None
+    assert detector["provider_name"] == "groq"
+    assert detector["provider_status"] == "SUCCESS"
+    assert detector["provider_error_type"] is None
+
+
+def test_provider_dashboard_view_reads_error_metadata():
+    detector = _detector_view(make_detector(
+        "provider",
+        1.0,
+        {
+            "provider": "groq",
+            "status": "ERROR",
+            "error_type": "request_failed",
+        },
+    ))
+
+    assert detector["triggered"] is False
+    assert detector["provider_status"] == "ERROR"
+    assert detector["provider_error_type"] == "request_failed"

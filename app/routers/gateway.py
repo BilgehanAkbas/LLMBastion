@@ -6,14 +6,23 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette import status
+from starlette.concurrency import run_in_threadpool
 
-from ..core.config import GROQ_API_KEY, GROQ_MODEL
+from ..core.config import (
+    GROQ_API_KEY,
+    GROQ_MODEL,
+    LLM_PROVIDER,
+)
 from ..database import SessionLocal
 from ..guards.input.rule_guard import RuleGuard
 from ..guards.input.semantic_guard import SemanticGuard
 from ..guards.output.data_guard import DataGuard, OutputAction
 from ..policies.input_policy import InputPolicy, PolicyAction
-from ..providers.groq_provider import GroqProvider
+from ..providers.errors import (
+    ProviderConfigurationError,
+    ProviderResponseError,
+)
+from ..providers.factory import build_provider
 from ..services.audit import save_request_audit
 from ..services.risk_engine import RiskEngine
 
@@ -27,7 +36,11 @@ semantic_guard = SemanticGuard()
 risk_engine = RiskEngine()
 input_policy = InputPolicy()
 data_guard = DataGuard()
-provider = GroqProvider(api_key=GROQ_API_KEY, model=GROQ_MODEL)
+provider = build_provider(
+    LLM_PROVIDER,
+    groq_api_key=GROQ_API_KEY,
+    groq_model=GROQ_MODEL,
+)
 
 
 def get_db():
@@ -139,18 +152,115 @@ async def chat(request: ChatRequest, db: db_dependency):
             triggered_detectors=assessment.triggered_detectors,
         )
 
+    provider_started = time.perf_counter()
+
     try:
-        model_response = provider.generate(request.message)
-    except RuntimeError as exc:
+        # Provider SDKs are synchronous. Run them outside the event loop so one
+        # upstream request does not block unrelated FastAPI requests.
+        model_response = await run_in_threadpool(
+            provider.generate,
+            request.message,
+        )
+    except ProviderConfigurationError as exc:
+        provider_latency_ms = (
+            time.perf_counter() - provider_started
+        ) * 1000
+        detector_results.append({
+            "detector_name": "provider",
+            "score": 1.0,
+            "evidence": {
+                "provider": LLM_PROVIDER,
+                "status": "ERROR",
+                "error_type": "configuration",
+            },
+            "latency_ms": provider_latency_ms,
+        })
+        total_latency_ms = (
+            time.perf_counter() - request_started
+        ) * 1000
+        save_request_audit(
+            db,
+            request_id=request_id,
+            risk_score=assessment.risk_score,
+            action="ERROR",
+            latency_ms=total_latency_ms,
+            detector_results=detector_results,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    except ProviderResponseError as exc:
+        provider_latency_ms = (
+            time.perf_counter() - provider_started
+        ) * 1000
+        detector_results.append({
+            "detector_name": "provider",
+            "score": 1.0,
+            "evidence": {
+                "provider": LLM_PROVIDER,
+                "status": "ERROR",
+                "error_type": "invalid_response",
+            },
+            "latency_ms": provider_latency_ms,
+        })
+        total_latency_ms = (
+            time.perf_counter() - request_started
+        ) * 1000
+        save_request_audit(
+            db,
+            request_id=request_id,
+            risk_score=assessment.risk_score,
+            action="ERROR",
+            latency_ms=total_latency_ms,
+            detector_results=detector_results,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="LLM provider returned an invalid response",
+        ) from exc
     except Exception as exc:
+        provider_latency_ms = (
+            time.perf_counter() - provider_started
+        ) * 1000
+        detector_results.append({
+            "detector_name": "provider",
+            "score": 1.0,
+            "evidence": {
+                "provider": LLM_PROVIDER,
+                "status": "ERROR",
+                "error_type": "request_failed",
+            },
+            "latency_ms": provider_latency_ms,
+        })
+        total_latency_ms = (
+            time.perf_counter() - request_started
+        ) * 1000
+        save_request_audit(
+            db,
+            request_id=request_id,
+            risk_score=assessment.risk_score,
+            action="ERROR",
+            latency_ms=total_latency_ms,
+            detector_results=detector_results,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="LLM provider request failed",
         ) from exc
+
+    provider_latency_ms = (
+        time.perf_counter() - provider_started
+    ) * 1000
+    detector_results.append({
+        "detector_name": "provider",
+        "score": 0.0,
+        "evidence": {
+            "provider": LLM_PROVIDER,
+            "status": "SUCCESS",
+        },
+        "latency_ms": provider_latency_ms,
+    })
 
     output_guard_started = time.perf_counter()
     output_result = data_guard.analyze(model_response)

@@ -1,3 +1,9 @@
+from .errors import (
+    ProviderConfigurationError,
+    ProviderResponseError,
+)
+
+
 class GroqProvider:
     def __init__(self, api_key: str | None, model: str):
         self.api_key = api_key
@@ -5,7 +11,9 @@ class GroqProvider:
 
     def generate(self, message: str) -> str:
         if not self.api_key:
-            raise RuntimeError("GROQ_API_KEY is not configured")
+            raise ProviderConfigurationError(
+                "GROQ_API_KEY is not configured"
+            )
 
         from groq import Groq
 
@@ -21,7 +29,9 @@ class GroqProvider:
         )
 
         content = completion.choices[0].message.content
-        if content is None:
-            raise RuntimeError("Groq returned an empty response")
+        if content is None or not str(content).strip():
+            raise ProviderResponseError(
+                "Groq returned an empty response"
+            )
 
         return str(content)
