@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import Annotated
 from uuid import uuid4
@@ -13,6 +14,7 @@ from ..core.config import (
     GROQ_MODEL,
     LLM_PROVIDER,
 )
+from ..core.observability import get_request_id, log_event
 from ..database import SessionLocal
 from ..guards.input.rule_guard import RuleGuard
 from ..guards.input.semantic_guard import SemanticGuard
@@ -25,6 +27,9 @@ from ..providers.errors import (
 from ..providers.factory import build_provider
 from ..services.audit import save_request_audit
 from ..services.risk_engine import RiskEngine
+
+logger = logging.getLogger(__name__)
+
 
 router = APIRouter(
     prefix="/api/v1",
@@ -73,7 +78,7 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, db: db_dependency):
-    request_id = str(uuid4())
+    request_id = get_request_id() or str(uuid4())
     request_started = time.perf_counter()
 
     rule_started = time.perf_counter()
@@ -86,6 +91,20 @@ async def chat(request: ChatRequest, db: db_dependency):
     try:
         semantic_result = semantic_guard.analyze(request.message)
     except RuntimeError as exc:
+        semantic_latency_ms = (
+            time.perf_counter() - semantic_started
+        ) * 1000
+        log_event(
+            logger,
+            logging.ERROR,
+            "semantic_guard.unavailable",
+            latency_ms=round(semantic_latency_ms, 3),
+            exc_info=(
+                type(exc),
+                exc,
+                exc.__traceback__,
+            ),
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
@@ -142,6 +161,15 @@ async def chat(request: ChatRequest, db: db_dependency):
             latency_ms=total_latency_ms,
             detector_results=detector_results,
         )
+        log_event(
+            logger,
+            logging.INFO,
+            "gateway.decision",
+            action=decision.action.value,
+            risk_score=round(assessment.risk_score, 4),
+            semantic_score=round(semantic_result.score, 4),
+            duration_ms=round(total_latency_ms, 3),
+        )
 
         return ChatResponse(
             request_id=request_id,
@@ -175,6 +203,20 @@ async def chat(request: ChatRequest, db: db_dependency):
             },
             "latency_ms": provider_latency_ms,
         })
+        log_event(
+            logger,
+            logging.ERROR,
+            "provider.complete",
+            provider=LLM_PROVIDER,
+            provider_status="error",
+            error_type="configuration",
+            latency_ms=round(provider_latency_ms, 3),
+            exc_info=(
+                type(exc),
+                exc,
+                exc.__traceback__,
+            ),
+        )
         total_latency_ms = (
             time.perf_counter() - request_started
         ) * 1000
@@ -204,6 +246,20 @@ async def chat(request: ChatRequest, db: db_dependency):
             },
             "latency_ms": provider_latency_ms,
         })
+        log_event(
+            logger,
+            logging.ERROR,
+            "provider.complete",
+            provider=LLM_PROVIDER,
+            provider_status="error",
+            error_type="invalid_response",
+            latency_ms=round(provider_latency_ms, 3),
+            exc_info=(
+                type(exc),
+                exc,
+                exc.__traceback__,
+            ),
+        )
         total_latency_ms = (
             time.perf_counter() - request_started
         ) * 1000
@@ -233,6 +289,20 @@ async def chat(request: ChatRequest, db: db_dependency):
             },
             "latency_ms": provider_latency_ms,
         })
+        log_event(
+            logger,
+            logging.ERROR,
+            "provider.complete",
+            provider=LLM_PROVIDER,
+            provider_status="error",
+            error_type="request_failed",
+            latency_ms=round(provider_latency_ms, 3),
+            exc_info=(
+                type(exc),
+                exc,
+                exc.__traceback__,
+            ),
+        )
         total_latency_ms = (
             time.perf_counter() - request_started
         ) * 1000
@@ -261,6 +331,14 @@ async def chat(request: ChatRequest, db: db_dependency):
         },
         "latency_ms": provider_latency_ms,
     })
+    log_event(
+        logger,
+        logging.INFO,
+        "provider.complete",
+        provider=LLM_PROVIDER,
+        provider_status="success",
+        latency_ms=round(provider_latency_ms, 3),
+    )
 
     output_guard_started = time.perf_counter()
     output_result = data_guard.analyze(model_response)
@@ -282,6 +360,14 @@ async def chat(request: ChatRequest, db: db_dependency):
             "latency_ms": output_guard_latency_ms,
         }
     )
+    log_event(
+        logger,
+        logging.INFO,
+        "data_guard.complete",
+        output_action=output_result.action.value,
+        redaction_count=output_result.redaction_count,
+        latency_ms=round(output_guard_latency_ms, 3),
+    )
 
     total_latency_ms = (
         time.perf_counter() - request_started
@@ -294,6 +380,15 @@ async def chat(request: ChatRequest, db: db_dependency):
         action=decision.action.value,
         latency_ms=total_latency_ms,
         detector_results=detector_results,
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "gateway.decision",
+        action=decision.action.value,
+        risk_score=round(assessment.risk_score, 4),
+        semantic_score=round(semantic_result.score, 4),
+        duration_ms=round(total_latency_ms, 3),
     )
 
     return ChatResponse(

@@ -1,14 +1,22 @@
+import hashlib
+import logging
 import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
+from typing import Protocol
 
+from redis import Redis
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from ..core.errors import build_error_body
+from ..core.observability import log_event
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -19,8 +27,16 @@ class RateLimitDecision:
     reset_after_seconds: int
 
 
+class RateLimiter(Protocol):
+    def check(self, key: str) -> RateLimitDecision:
+        ...
+
+    def ping(self) -> bool:
+        ...
+
+
 class FixedWindowRateLimiter:
-    """Small in-memory fixed-window limiter for a single app process."""
+    """Small in-memory fixed-window limiter for one app process."""
 
     def __init__(
         self,
@@ -94,6 +110,117 @@ class FixedWindowRateLimiter:
                 reset_after_seconds=reset_after,
             )
 
+    def ping(self) -> bool:
+        return True
+
+
+class RedisFixedWindowRateLimiter:
+    """Atomic shared fixed-window limiter backed by Redis.
+
+    Client identifiers are SHA-256 hashed before becoming Redis keys, so raw
+    socket IP addresses are not persisted in Redis key names.
+    """
+
+    _INCREMENT_SCRIPT = """
+    local current = redis.call('INCR', KEYS[1])
+    if current == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[1])
+    end
+    local ttl = redis.call('TTL', KEYS[1])
+    return {current, ttl}
+    """
+
+    def __init__(
+        self,
+        *,
+        limit: int,
+        window_seconds: int,
+        redis_url: str | None = None,
+        client=None,
+        key_prefix: str = "llmbastion:rate_limit",
+    ):
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        if window_seconds < 1:
+            raise ValueError(
+                "window_seconds must be at least 1"
+            )
+        if client is None and not redis_url:
+            raise ValueError(
+                "redis_url is required when no Redis client is supplied"
+            )
+
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self.key_prefix = key_prefix
+
+        self.client = client or Redis.from_url(
+            redis_url,
+            decode_responses=False,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            health_check_interval=30,
+        )
+
+    def _redis_key(self, client_key: str) -> str:
+        digest = hashlib.sha256(
+            client_key.encode("utf-8")
+        ).hexdigest()
+        return f"{self.key_prefix}:{digest}"
+
+    def check(self, key: str) -> RateLimitDecision:
+        redis_key = self._redis_key(key)
+
+        result = self.client.eval(
+            self._INCREMENT_SCRIPT,
+            1,
+            redis_key,
+            self.window_seconds,
+        )
+
+        count = int(result[0])
+        ttl = max(int(result[1]), 1)
+
+        return RateLimitDecision(
+            allowed=count <= self.limit,
+            limit=self.limit,
+            remaining=max(
+                self.limit - count,
+                0,
+            ),
+            reset_after_seconds=ttl,
+        )
+
+    def ping(self) -> bool:
+        return bool(self.client.ping())
+
+
+def build_rate_limiter(
+    *,
+    backend: str,
+    limit: int,
+    window_seconds: int,
+    redis_url: str | None = None,
+) -> RateLimiter:
+    normalized_backend = backend.strip().lower()
+
+    if normalized_backend == "memory":
+        return FixedWindowRateLimiter(
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+
+    if normalized_backend == "redis":
+        return RedisFixedWindowRateLimiter(
+            limit=limit,
+            window_seconds=window_seconds,
+            redis_url=redis_url,
+        )
+
+    raise ValueError(
+        "backend must be either 'memory' or 'redis'"
+    )
+
 
 class ChatRateLimitMiddleware(BaseHTTPMiddleware):
     """Apply rate limits only to POST /api/v1/chat requests."""
@@ -102,7 +229,7 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
         self,
         app,
         *,
-        limiter: FixedWindowRateLimiter,
+        limiter: RateLimiter,
     ):
         super().__init__(app)
         self.limiter = limiter
@@ -126,7 +253,34 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
             else "unknown"
         )
 
-        decision = self.limiter.check(client_key)
+        try:
+            # Redis uses a synchronous client. Keep the network operation out
+            # of the event loop; the memory limiter is cheap in the same path.
+            decision = await run_in_threadpool(
+                self.limiter.check,
+                client_key,
+            )
+        except Exception as exc:
+            # Fail closed: if the shared limiter is unavailable, do not silently
+            # allow unlimited traffic. Never log the raw client identifier.
+            log_event(
+                logger,
+                logging.ERROR,
+                "rate_limit.backend_unavailable",
+                exc_info=(
+                    type(exc),
+                    exc,
+                    exc.__traceback__,
+                ),
+            )
+            return JSONResponse(
+                status_code=503,
+                content=build_error_body(
+                    "rate_limiter_unavailable",
+                    "Rate limiter temporarily unavailable",
+                ),
+            )
+
         headers = {
             "X-RateLimit-Limit": str(decision.limit),
             "X-RateLimit-Remaining": str(

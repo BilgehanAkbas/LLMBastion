@@ -11,11 +11,15 @@ from .core.config import (
     APP_ENV,
     GROQ_API_KEY,
     LLM_PROVIDER,
+    LOG_LEVEL,
     MAX_REQUEST_BODY_BYTES,
+    RATE_LIMIT_BACKEND,
     RATE_LIMIT_REQUESTS,
     RATE_LIMIT_WINDOW_SECONDS,
+    REDIS_URL,
 )
 from .core.errors import install_error_handlers
+from .core.observability import configure_logging, log_event
 from .database import SessionLocal, engine
 from .models import Base
 from .routers.dashboard import router as dashboard_router
@@ -27,11 +31,14 @@ from .routers.playground import router as playground_router
 from .routers.public import router as public_router
 from .services.rate_limiter import (
     ChatRateLimitMiddleware,
-    FixedWindowRateLimiter,
+    RateLimiter,
+    build_rate_limiter,
 )
+from .services.request_context import RequestContextMiddleware
 from .services.request_size import RequestBodyLimitMiddleware
 from .services.security_headers import SecurityHeadersMiddleware
 
+configure_logging(LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -54,10 +61,20 @@ def _check_provider_configuration() -> None:
         )
 
 
+def _check_rate_limiter_ready(
+    limiter: RateLimiter,
+) -> None:
+    if not limiter.ping():
+        raise RuntimeError(
+            "Rate limiter backend is not ready"
+        )
+
+
 def create_app(
     app_env: str = APP_ENV,
     *,
     max_request_body_bytes: int = MAX_REQUEST_BODY_BYTES,
+    rate_limiter: RateLimiter | None = None,
 ) -> FastAPI:
     normalized_env = app_env.strip().lower()
     if normalized_env not in {"development", "production"}:
@@ -70,6 +87,13 @@ def create_app(
         )
 
     is_development = normalized_env == "development"
+
+    limiter = rate_limiter or build_rate_limiter(
+        backend=RATE_LIMIT_BACKEND,
+        limit=RATE_LIMIT_REQUESTS,
+        window_seconds=RATE_LIMIT_WINDOW_SECONDS,
+        redis_url=REDIS_URL,
+    )
 
     application = FastAPI(
         title="LLMBastion",
@@ -91,26 +115,27 @@ def create_app(
     application.state.max_request_body_bytes = (
         max_request_body_bytes
     )
+    application.state.rate_limiter = limiter
 
     install_error_handlers(application)
 
     # add_middleware inserts new middleware outside previous user middleware.
     # Desired request order:
-    # Security headers -> rate limit -> body limit -> FastAPI routes.
+    # request context -> security headers -> rate limit -> body limit -> routes.
     application.add_middleware(
         RequestBodyLimitMiddleware,
         max_bytes=max_request_body_bytes,
     )
     application.add_middleware(
         ChatRateLimitMiddleware,
-        limiter=FixedWindowRateLimiter(
-            limit=RATE_LIMIT_REQUESTS,
-            window_seconds=RATE_LIMIT_WINDOW_SECONDS,
-        ),
+        limiter=limiter,
     )
     application.add_middleware(
         SecurityHeadersMiddleware,
         is_development=is_development,
+    )
+    application.add_middleware(
+        RequestContextMiddleware,
     )
 
     application.mount(
@@ -119,12 +144,13 @@ def create_app(
         name="static",
     )
 
-    Base.metadata.create_all(bind=engine)
+    # Development remains zero-setup. Production schema changes are handled by
+    # Alembic so deploys do not silently mutate the database at app import.
+    if is_development:
+        Base.metadata.create_all(bind=engine)
 
     @application.get("/favicon.ico", include_in_schema=False)
     def legacy_favicon():
-        # Browsers commonly probe /favicon.ico even when an SVG favicon is
-        # declared in HTML. Redirect to the canonical static SVG.
         return RedirectResponse(
             url="/static/favicon.svg",
             status_code=307,
@@ -132,7 +158,6 @@ def create_app(
 
     @application.get("/health")
     def health():
-        # Liveness only: process is running and can serve HTTP.
         return {
             "status": "ok",
             "service": "LLMBastion",
@@ -142,15 +167,17 @@ def create_app(
 
     @application.get("/ready")
     def ready():
-        # Readiness verifies local dependencies/configuration without making
-        # an external provider request.
         try:
             _check_database_ready()
             semantic_guard.ensure_ready()
             _check_provider_configuration()
+            _check_rate_limiter_ready(limiter)
         except Exception as exc:
-            logger.error(
-                "Readiness check failed",
+            log_event(
+                logger,
+                logging.ERROR,
+                "readiness.failed",
+                environment=normalized_env,
                 exc_info=(
                     type(exc),
                     exc,
@@ -171,6 +198,7 @@ def create_app(
                 "database": "ok",
                 "semantic_guard": "ok",
                 "provider_config": "ok",
+                "rate_limiter": "ok",
             },
         }
 

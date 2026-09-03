@@ -1,4 +1,40 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: llmbastion
+      POSTGRES_USER: llmbastion
+      POSTGRES_PASSWORD: llmbastion
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U llmbastion -d llmbastion"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no"
+      ]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   web:
     build:
       context: .
@@ -6,5 +42,18 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://llmbastion:llmbastion@postgres:5432/llmbastion
+      RATE_LIMIT_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
+
+volumes:
+  postgres_data:

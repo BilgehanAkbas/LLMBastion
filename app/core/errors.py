@@ -8,6 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .observability import log_event, safe_request_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -129,11 +131,14 @@ async def unhandled_exception_handler(
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
-    # Log method/path + traceback, never the request body.
-    logger.error(
-        "Unhandled request error: %s %s",
-        request.method,
-        request.url.path,
+    # Structured logger retains only exception class + safe route metadata.
+    log_event(
+        logger,
+        logging.ERROR,
+        "http.unhandled_exception",
+        method=request.method,
+        path=safe_request_path(request),
+        status_code=500,
         exc_info=(type(exc), exc, exc.__traceback__),
     )
 

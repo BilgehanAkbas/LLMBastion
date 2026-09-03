@@ -1,6 +1,8 @@
 {% extends "layout.html" %}
 
 {% block title %}Playground - LLMBastion{% endblock %}
+{% block body_class %}playground-page{% endblock %}
+{% block main_class %}playground-main{% endblock %}
 
 {% block extra_head %}
 <link
@@ -76,11 +78,7 @@
                 <div class="message-avatar">LB</div>
                 <div class="message-content">
                     <div class="message-label">LLMBastion</div>
-                    <div class="message-bubble">
-                        Send a normal prompt or try a prompt-injection attempt.
-                        I will show whether the gateway allowed, blocked, or
-                        redacted the request.
-                    </div>
+                    <div class="message-bubble">Send a normal prompt or try a prompt-injection attempt. I will show whether the gateway allowed, blocked, or redacted the request.</div>
                 </div>
             </div>
         </div>

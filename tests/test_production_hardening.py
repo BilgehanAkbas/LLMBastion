@@ -161,6 +161,11 @@ def test_ready_returns_200_when_local_checks_pass(
         "_check_provider_configuration",
         lambda: None,
     )
+    monkeypatch.setattr(
+        main,
+        "_check_rate_limiter_ready",
+        lambda limiter: None,
+    )
 
     client = TestClient(
         main.create_app("development")
@@ -173,6 +178,7 @@ def test_ready_returns_200_when_local_checks_pass(
         "database": "ok",
         "semantic_guard": "ok",
         "provider_config": "ok",
+        "rate_limiter": "ok",
     }
 
 
@@ -209,3 +215,43 @@ def test_ready_returns_structured_503_when_a_check_fails(
     assert payload["error"]["code"] == "service_unavailable"
     assert payload["detail"] == "Service temporarily unavailable"
     assert "provider config missing" not in response.text
+
+
+def test_ready_fails_when_rate_limiter_is_unavailable(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        main,
+        "_check_database_ready",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        main.semantic_guard,
+        "ensure_ready",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        main,
+        "_check_provider_configuration",
+        lambda: None,
+    )
+
+    def fail_rate_limiter(limiter):
+        raise RuntimeError("redis is down")
+
+    monkeypatch.setattr(
+        main,
+        "_check_rate_limiter_ready",
+        fail_rate_limiter,
+    )
+
+    client = TestClient(
+        main.create_app("production")
+    )
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == (
+        "service_unavailable"
+    )
+    assert "redis is down" not in response.text

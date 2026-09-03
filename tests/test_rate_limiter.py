@@ -1,9 +1,12 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.services.rate_limiter import (
     ChatRateLimitMiddleware,
     FixedWindowRateLimiter,
+    RedisFixedWindowRateLimiter,
+    build_rate_limiter,
 )
 
 
@@ -16,6 +19,22 @@ class FakeClock:
 
     def advance(self, seconds):
         self.value += seconds
+
+
+class FakeRedis:
+    def __init__(self, eval_results=None, ping_result=True):
+        self.eval_results = list(
+            eval_results or []
+        )
+        self.ping_result = ping_result
+        self.eval_calls = []
+
+    def eval(self, *args):
+        self.eval_calls.append(args)
+        return self.eval_results.pop(0)
+
+    def ping(self):
+        return self.ping_result
 
 
 def test_limiter_allows_requests_within_window():
@@ -84,6 +103,92 @@ def test_limiter_keeps_clients_independent():
     assert limiter.check("client-b").allowed is True
 
 
+def test_memory_limiter_readiness_is_always_available():
+    limiter = FixedWindowRateLimiter(
+        limit=1,
+        window_seconds=60,
+    )
+
+    assert limiter.ping() is True
+
+
+def test_redis_limiter_uses_shared_atomic_counter():
+    client = FakeRedis(
+        eval_results=[
+            [1, 60],
+            [2, 59],
+        ]
+    )
+    limiter = RedisFixedWindowRateLimiter(
+        limit=1,
+        window_seconds=60,
+        client=client,
+    )
+
+    first = limiter.check("203.0.113.8")
+    second = limiter.check("203.0.113.8")
+
+    assert first.allowed is True
+    assert first.remaining == 0
+    assert second.allowed is False
+    assert second.remaining == 0
+    assert second.reset_after_seconds == 59
+
+
+def test_redis_limiter_does_not_put_raw_ip_in_redis_key():
+    client = FakeRedis(
+        eval_results=[[1, 60]]
+    )
+    limiter = RedisFixedWindowRateLimiter(
+        limit=2,
+        window_seconds=60,
+        client=client,
+    )
+
+    limiter.check("203.0.113.8")
+
+    redis_key = client.eval_calls[0][2]
+
+    assert "203.0.113.8" not in redis_key
+    assert redis_key.startswith("llmbastion:rate_limit:")
+
+
+def test_redis_limiter_readiness_uses_ping():
+    client = FakeRedis(
+        ping_result=True
+    )
+    limiter = RedisFixedWindowRateLimiter(
+        limit=1,
+        window_seconds=60,
+        client=client,
+    )
+
+    assert limiter.ping() is True
+
+
+def test_rate_limiter_factory_builds_memory_backend():
+    limiter = build_rate_limiter(
+        backend="memory",
+        limit=2,
+        window_seconds=60,
+    )
+
+    assert isinstance(
+        limiter,
+        FixedWindowRateLimiter,
+    )
+
+
+def test_redis_backend_requires_url():
+    with pytest.raises(ValueError):
+        build_rate_limiter(
+            backend="redis",
+            limit=2,
+            window_seconds=60,
+            redis_url=None,
+        )
+
+
 def test_chat_middleware_returns_429_and_rate_headers():
     app = FastAPI()
     app.add_middleware(
@@ -118,3 +223,31 @@ def test_chat_middleware_returns_429_and_rate_headers():
     assert second.headers["X-RateLimit-Limit"] == "1"
     assert second.headers["X-RateLimit-Remaining"] == "0"
     assert int(second.headers["Retry-After"]) >= 1
+
+
+def test_chat_middleware_fails_closed_when_backend_is_down():
+    class BrokenLimiter:
+        def check(self, key):
+            raise RuntimeError("redis connection failed")
+
+        def ping(self):
+            return False
+
+    app = FastAPI()
+    app.add_middleware(
+        ChatRateLimitMiddleware,
+        limiter=BrokenLimiter(),
+    )
+
+    @app.post("/api/v1/chat")
+    def fake_chat():
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.post("/api/v1/chat")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == (
+        "rate_limiter_unavailable"
+    )
+    assert "redis connection failed" not in response.text
