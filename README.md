@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-LLMBastion is a prototype **LLM security gateway** that combines deterministic rules and machine learning to detect prompt-injection attacks before they reach an LLM, enforce risk-based policy decisions, protect sensitive output data, and provide security observability.
+LLMBastion v1.0 is a self-hosted, API-first **Turkish-English LLM security gateway** for prompt-injection detection, sensitive-output protection, and security observability. The stable runtime uses the tested hybrid RuleGuard + SemanticGuard v2 pipeline. Experimental candidates that did not pass the project's validation gate are not promoted into the runtime.
 
 ## Highlights
 
@@ -15,9 +15,34 @@ LLMBastion is a prototype **LLM security gateway** that combines deterministic r
 - Deterministic sensitive-output protection with `DataGuard v2`
 - Provider abstraction behind a common `LLMProvider` interface
 - Provider success/failure telemetry and latency tracking
-- Per-client API rate limiting for `POST /api/v1/chat`
+- Per-client API rate limiting for public guard/chat endpoints
 - Request-level security telemetry and a local dashboard
 - Reproducible model artifact build and GitHub Actions test pipeline
+
+## Public API
+
+The stable API surface is:
+
+```text
+POST /v1/guard
+POST /v1/chat/completions
+```
+
+`POST /v1/guard` inspects a prompt without calling the configured LLM provider.
+
+`POST /v1/chat/completions` is a deliberately small OpenAI-compatible subset:
+one non-streaming `user` message is supported today. Security metadata is
+returned under the `llmbastion` field. The existing `POST /api/v1/chat`
+endpoint remains available for the built-in Playground and backward
+compatibility.
+
+The stable blocking path remains `RuleGuard + SemanticGuard v2`. Experimental
+candidates are promoted only after passing the project's validation gate.
+
+The compatibility endpoint uses the provider model configured through
+`GROQ_MODEL`. A supplied `model` field must match that configured model;
+LLMBastion never claims to have used a different model than the one actually
+called upstream.
 
 ## Architecture
 
@@ -137,7 +162,7 @@ Provider telemetry stores the provider name, success/error status, generic error
 
 ## Rate limiting
 
-`POST /api/v1/chat` is protected by a process-local fixed-window rate limiter.
+Public POST gateway endpoints are protected by a fixed-window rate limiter. Development can use the in-memory backend; shared deployments can use Redis.
 
 Default configuration:
 
@@ -156,7 +181,7 @@ Retry-After
 
 The limiter deliberately uses the direct socket peer IP rather than trusting `X-Forwarded-For`. Proxy-aware client IP handling should only be enabled behind a configured trusted proxy.
 
-The current implementation is intentionally in-memory and single-process. Multi-instance production deployments should use a shared limiter such as Redis or an API gateway.
+The limiter backend is configurable. Use Redis for shared or multi-instance deployments.
 
 ## Audit privacy
 
@@ -205,26 +230,38 @@ Open:
 - Dashboard: `http://127.0.0.1:8000/dashboard`
 - API docs: `http://127.0.0.1:8000/docs`
 
+## Docker Compose
+
+For the production-shaped local stack (web + PostgreSQL + Redis), set
+`GROQ_API_KEY` in `.env` and run:
+
+```powershell
+docker compose up --build
+```
+
+The Compose stack runs the app in `production` mode, uses PostgreSQL for audit
+data, Redis for shared rate limiting, and applies Alembic migrations before
+starting Uvicorn.
+
 ## Tests
 
 ```powershell
 python -m pytest -q
 ```
 
-Final local verification: **74 passed**.
-
-GitHub Actions builds the runtime artifact and runs the test suite on pushes and pull requests.
+GitHub Actions rebuilds the frozen SemanticGuard v2 runtime artifact and runs the full test suite on pushes and pull requests. A release should only be created from a green test run.
 
 ## Limitations
 
-LLMBastion is a prototype, not a complete prompt-injection or data-loss-prevention solution.
+LLMBastion v1.0 is a focused security gateway, not a complete prompt-injection or data-loss-prevention solution.
 
 - The ML classifier depends on its training distribution and can miss unfamiliar attacks.
 - RuleGuard relies on explicit deterministic rules.
 - DataGuard v2 protects supported structured formats; it does not yet perform semantic PII/entity detection.
 - Groq is the only implemented provider today.
-- The rate limiter is process-local and not suitable for multi-instance production deployments.
-- The dashboard is intended for local development and has no authentication.
+- Development can use the in-memory limiter; shared deployments should use the Redis backend.
+- The dashboard is development-only and has no authentication.
+- The public API has no built-in client authentication in v1.0; do not expose it to untrusted networks without an access-control layer or trusted reverse proxy.
 - The risk policy is a tested OR rule, not a learned multi-signal risk model.
 
 ## Background

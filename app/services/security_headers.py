@@ -79,9 +79,17 @@ class SecurityHeadersMiddleware:
                     if key not in headers:
                         headers[key] = value
 
-                # LLM responses can contain private/sensitive material and
-                # should not be cached by browsers or intermediary caches.
-                if scope.get("path") == "/api/v1/chat":
+                # Gateway responses can contain model output or security
+                # assessment metadata and should never be cached.
+                sensitive_paths = {
+                    "/api/v1/chat",
+                    "/v1/guard",
+                    "/v1/chat/completions",
+                }
+                if (
+                    scope.get("method") == "POST"
+                    and scope.get("path") in sensitive_paths
+                ):
                     headers["Cache-Control"] = "no-store"
 
             await send(message)

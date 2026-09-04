@@ -63,7 +63,11 @@ def test_production_internal_urls_return_404():
 def test_production_keeps_public_product_routes():
     application = create_app("production")
     client = TestClient(application)
+    paths = route_paths(application)
 
+    assert "/v1/guard" in paths
+    assert "/v1/chat/completions" in paths
+    assert "/api/v1/chat" in paths
     assert client.get("/").status_code == 200
     assert client.get("/playground").status_code == 200
     assert client.get("/health").status_code == 200

@@ -189,7 +189,15 @@ def test_redis_backend_requires_url():
         )
 
 
-def test_chat_middleware_returns_429_and_rate_headers():
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/chat",
+        "/v1/guard",
+        "/v1/chat/completions",
+    ],
+)
+def test_chat_middleware_returns_429_and_rate_headers(path):
     app = FastAPI()
     app.add_middleware(
         ChatRateLimitMiddleware,
@@ -200,13 +208,15 @@ def test_chat_middleware_returns_429_and_rate_headers():
     )
 
     @app.post("/api/v1/chat")
+    @app.post("/v1/guard")
+    @app.post("/v1/chat/completions")
     def fake_chat():
         return {"ok": True}
 
     client = TestClient(app)
 
-    first = client.post("/api/v1/chat")
-    second = client.post("/api/v1/chat")
+    first = client.post(path)
+    second = client.post(path)
 
     assert first.status_code == 200
     assert first.headers["X-RateLimit-Limit"] == "1"

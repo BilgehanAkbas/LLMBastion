@@ -22,6 +22,7 @@ from .core.errors import install_error_handlers
 from .core.observability import configure_logging, log_event
 from .database import SessionLocal, engine
 from .models import Base
+from .routers.api_v1 import router as api_v1_router
 from .routers.dashboard import router as dashboard_router
 from .routers.gateway import (
     router as gateway_router,
@@ -42,6 +43,7 @@ configure_logging(LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
+APP_VERSION = "1.0.0"
 
 
 def _check_database_ready() -> None:
@@ -100,7 +102,7 @@ def create_app(
         description=(
             "LLM security gateway for prompt and output protection."
         ),
-        version="0.2.0",
+        version=APP_VERSION,
         docs_url=None,
         redoc_url=None,
         openapi_url=(
@@ -161,7 +163,7 @@ def create_app(
         return {
             "status": "ok",
             "service": "LLMBastion",
-            "version": "0.2.0",
+            "version": APP_VERSION,
             "environment": normalized_env,
         }
 
@@ -192,7 +194,7 @@ def create_app(
         return {
             "status": "ready",
             "service": "LLMBastion",
-            "version": "0.2.0",
+            "version": APP_VERSION,
             "environment": normalized_env,
             "checks": {
                 "database": "ok",
@@ -203,6 +205,7 @@ def create_app(
         }
 
     application.include_router(public_router)
+    application.include_router(api_v1_router)
     application.include_router(gateway_router)
     application.include_router(playground_router)
 

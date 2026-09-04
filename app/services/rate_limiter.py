@@ -223,7 +223,7 @@ def build_rate_limiter(
 
 
 class ChatRateLimitMiddleware(BaseHTTPMiddleware):
-    """Apply rate limits only to POST /api/v1/chat requests."""
+    """Apply rate limits to public LLM gateway endpoints."""
 
     def __init__(
         self,
@@ -239,9 +239,14 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next,
     ) -> Response:
+        protected_paths = {
+            "/api/v1/chat",
+            "/v1/guard",
+            "/v1/chat/completions",
+        }
         if not (
             request.method == "POST"
-            and request.url.path == "/api/v1/chat"
+            and request.url.path in protected_paths
         ):
             return await call_next(request)
 

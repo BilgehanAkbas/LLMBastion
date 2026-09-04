@@ -1,3 +1,4 @@
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -49,7 +50,15 @@ def test_production_security_headers_are_stricter():
     )
 
 
-def test_chat_request_body_limit_returns_structured_413():
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/chat",
+        "/v1/guard",
+        "/v1/chat/completions",
+    ],
+)
+def test_gateway_request_body_limit_returns_structured_413(path):
     client = TestClient(
         main.create_app(
             "development",
@@ -58,7 +67,7 @@ def test_chat_request_body_limit_returns_structured_413():
     )
 
     response = client.post(
-        "/api/v1/chat",
+        path,
         content=b"x" * 128,
         headers={
             "Content-Type": "application/json",
@@ -72,6 +81,33 @@ def test_chat_request_body_limit_returns_structured_413():
     assert payload["error"]["code"] == "request_too_large"
     assert payload["error"]["details"]["max_bytes"] == 64
     assert response.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/chat",
+        "/v1/guard",
+        "/v1/chat/completions",
+    ],
+)
+def test_gateway_responses_disable_caching(path):
+    client = TestClient(main.create_app("development"))
+
+    response = client.post(path, json={})
+
+    assert response.status_code == 422
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_health_reports_release_version():
+    client = TestClient(main.create_app("development"))
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["version"] == main.APP_VERSION
+    assert main.APP_VERSION == "1.0.0"
 
 
 def test_validation_errors_use_structured_format():

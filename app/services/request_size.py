@@ -10,7 +10,7 @@ class RequestBodyTooLarge(Exception):
 
 
 class RequestBodyLimitMiddleware:
-    """Limit the raw body size of POST /api/v1/chat.
+    """Limit raw bodies for public POST gateway endpoints.
 
     The limit is enforced from Content-Length when available and again while
     consuming ASGI body chunks, so chunked/no-length requests are also bounded.
@@ -34,10 +34,15 @@ class RequestBodyLimitMiddleware:
         receive,
         send,
     ) -> None:
+        protected_paths = {
+            "/api/v1/chat",
+            "/v1/guard",
+            "/v1/chat/completions",
+        }
         if not (
             scope["type"] == "http"
             and scope.get("method") == "POST"
-            and scope.get("path") == "/api/v1/chat"
+            and scope.get("path") in protected_paths
         ):
             await self.app(scope, receive, send)
             return
