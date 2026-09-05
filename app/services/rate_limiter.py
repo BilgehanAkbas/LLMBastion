@@ -15,6 +15,7 @@ from starlette.responses import JSONResponse, Response
 
 from ..core.errors import build_error_body
 from ..core.observability import log_event
+from ..core.routes import PUBLIC_GATEWAY_POST_PATHS
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,7 @@ class FixedWindowRateLimiter:
         if limit < 1:
             raise ValueError("limit must be at least 1")
         if window_seconds < 1:
-            raise ValueError(
-                "window_seconds must be at least 1"
-            )
+            raise ValueError("window_seconds must be at least 1")
 
         self.limit = limit
         self.window_seconds = window_seconds
@@ -62,12 +61,9 @@ class FixedWindowRateLimiter:
         now = self._clock()
 
         with self._lock:
-            window_start, count = self._buckets.get(
-                key,
-                (now, 0),
-            )
-
+            window_start, count = self._buckets.get(key, (now, 0))
             elapsed = now - window_start
+
             if elapsed >= self.window_seconds:
                 window_start = now
                 count = 0
@@ -75,9 +71,7 @@ class FixedWindowRateLimiter:
 
             reset_after = max(
                 1,
-                math.ceil(
-                    self.window_seconds - elapsed
-                ),
+                math.ceil(self.window_seconds - elapsed),
             )
 
             if count >= self.limit:
@@ -95,18 +89,14 @@ class FixedWindowRateLimiter:
                 stale_before = now - self.window_seconds
                 self._buckets = {
                     bucket_key: value
-                    for bucket_key, value
-                    in self._buckets.items()
+                    for bucket_key, value in self._buckets.items()
                     if value[0] > stale_before
                 }
 
             return RateLimitDecision(
                 allowed=True,
                 limit=self.limit,
-                remaining=max(
-                    self.limit - count,
-                    0,
-                ),
+                remaining=max(self.limit - count, 0),
                 reset_after_seconds=reset_after,
             )
 
@@ -115,11 +105,7 @@ class FixedWindowRateLimiter:
 
 
 class RedisFixedWindowRateLimiter:
-    """Atomic shared fixed-window limiter backed by Redis.
-
-    Client identifiers are SHA-256 hashed before becoming Redis keys, so raw
-    socket IP addresses are not persisted in Redis key names.
-    """
+    """Atomic shared fixed-window limiter backed by Redis."""
 
     _INCREMENT_SCRIPT = """
     local current = redis.call('INCR', KEYS[1])
@@ -142,9 +128,7 @@ class RedisFixedWindowRateLimiter:
         if limit < 1:
             raise ValueError("limit must be at least 1")
         if window_seconds < 1:
-            raise ValueError(
-                "window_seconds must be at least 1"
-            )
+            raise ValueError("window_seconds must be at least 1")
         if client is None and not redis_url:
             raise ValueError(
                 "redis_url is required when no Redis client is supplied"
@@ -153,7 +137,6 @@ class RedisFixedWindowRateLimiter:
         self.limit = limit
         self.window_seconds = window_seconds
         self.key_prefix = key_prefix
-
         self.client = client or Redis.from_url(
             redis_url,
             decode_responses=False,
@@ -163,14 +146,11 @@ class RedisFixedWindowRateLimiter:
         )
 
     def _redis_key(self, client_key: str) -> str:
-        digest = hashlib.sha256(
-            client_key.encode("utf-8")
-        ).hexdigest()
+        digest = hashlib.sha256(client_key.encode("utf-8")).hexdigest()
         return f"{self.key_prefix}:{digest}"
 
     def check(self, key: str) -> RateLimitDecision:
         redis_key = self._redis_key(key)
-
         result = self.client.eval(
             self._INCREMENT_SCRIPT,
             1,
@@ -184,10 +164,7 @@ class RedisFixedWindowRateLimiter:
         return RateLimitDecision(
             allowed=count <= self.limit,
             limit=self.limit,
-            remaining=max(
-                self.limit - count,
-                0,
-            ),
+            remaining=max(self.limit - count, 0),
             reset_after_seconds=ttl,
         )
 
@@ -217,41 +194,23 @@ def build_rate_limiter(
             redis_url=redis_url,
         )
 
-    raise ValueError(
-        "backend must be either 'memory' or 'redis'"
-    )
+    raise ValueError("backend must be either 'memory' or 'redis'")
 
 
 class ChatRateLimitMiddleware(BaseHTTPMiddleware):
     """Apply rate limits to public LLM gateway endpoints."""
 
-    def __init__(
-        self,
-        app,
-        *,
-        limiter: RateLimiter,
-    ):
+    def __init__(self, app, *, limiter: RateLimiter):
         super().__init__(app)
         self.limiter = limiter
 
-    async def dispatch(
-        self,
-        request: Request,
-        call_next,
-    ) -> Response:
-        protected_paths = {
-            "/api/v1/chat",
-            "/v1/guard",
-            "/v1/chat/completions",
-        }
+    async def dispatch(self, request: Request, call_next) -> Response:
         if not (
             request.method == "POST"
-            and request.url.path in protected_paths
+            and request.url.path in PUBLIC_GATEWAY_POST_PATHS
         ):
             return await call_next(request)
 
-        # Deliberately use the socket peer address. X-Forwarded-For is not
-        # trusted unless deployment has a configured trusted proxy layer.
         client_key = (
             request.client.host
             if request.client is not None
@@ -259,24 +218,16 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
         )
 
         try:
-            # Redis uses a synchronous client. Keep the network operation out
-            # of the event loop; the memory limiter is cheap in the same path.
             decision = await run_in_threadpool(
                 self.limiter.check,
                 client_key,
             )
         except Exception as exc:
-            # Fail closed: if the shared limiter is unavailable, do not silently
-            # allow unlimited traffic. Never log the raw client identifier.
             log_event(
                 logger,
                 logging.ERROR,
                 "rate_limit.backend_unavailable",
-                exc_info=(
-                    type(exc),
-                    exc,
-                    exc.__traceback__,
-                ),
+                exc_info=(type(exc), exc, exc.__traceback__),
             )
             return JSONResponse(
                 status_code=503,
@@ -288,18 +239,12 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
 
         headers = {
             "X-RateLimit-Limit": str(decision.limit),
-            "X-RateLimit-Remaining": str(
-                decision.remaining
-            ),
-            "X-RateLimit-Reset": str(
-                decision.reset_after_seconds
-            ),
+            "X-RateLimit-Remaining": str(decision.remaining),
+            "X-RateLimit-Reset": str(decision.reset_after_seconds),
         }
 
         if not decision.allowed:
-            headers["Retry-After"] = str(
-                decision.reset_after_seconds
-            )
+            headers["Retry-After"] = str(decision.reset_after_seconds)
             return JSONResponse(
                 status_code=429,
                 content=build_error_body(

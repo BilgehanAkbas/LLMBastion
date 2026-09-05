@@ -5,8 +5,6 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class RuleDefinition:
-    """A static detection rule used by RuleGuard."""
-
     rule_id: str
     weight: float
     patterns: tuple[str, ...]
@@ -14,8 +12,6 @@ class RuleDefinition:
 
 @dataclass(frozen=True)
 class RuleMatch:
-    """Evidence produced when one detection rule matches."""
-
     rule_id: str
     weight: float
     matched_text: str
@@ -23,11 +19,6 @@ class RuleMatch:
 
 @dataclass(frozen=True)
 class RuleGuardResult:
-    """RuleGuard analysis output.
-
-    This is evidence plus a heuristic score, not an ALLOW/BLOCK decision.
-    """
-
     score: float
     matches: tuple[RuleMatch, ...]
 
@@ -89,9 +80,6 @@ RULES = (
     ),
 )
 
-# Generic meta-discussion patterns. These are not "safe words"; they only reduce
-# confidence when the suspicious phrase is being discussed rather than issued
-# as an instruction.
 META_CONTEXT_PATTERNS = (
     r"\b(explain|define|describe)\s+(why\s+)?(the\s+)?(term|phrase|sentence|concept)\b",
     r"\bin\s+the\s+context\s+of\b",
@@ -103,12 +91,10 @@ META_CONTEXT_MULTIPLIER = 0.40
 
 
 class RuleGuard:
-    """Fast, deterministic baseline detector for obvious prompt-injection patterns."""
+    """Fast, deterministic baseline detector for obvious prompt injection."""
 
     @staticmethod
     def normalize(text: str) -> str:
-        """Canonicalize user text before regex matching."""
-
         normalized = unicodedata.normalize("NFKC", text)
 
         for character in ("\u200b", "\u200c", "\u200d", "\ufeff"):
@@ -119,13 +105,28 @@ class RuleGuard:
 
     @staticmethod
     def _is_quoted(normalized_text: str, matched_text: str) -> bool:
-        quoted_forms = (
-            f"'{matched_text}'",
-            f'"{matched_text}"',
-            f"“{matched_text}”",
-            f"‘{matched_text}’",
+        quote_pairs = (
+            ("'", "'"),
+            ('"', '"'),
+            ("“", "”"),
+            ("‘", "’"),
         )
-        return any(form in normalized_text for form in quoted_forms)
+
+        for occurrence in re.finditer(
+            re.escape(matched_text),
+            normalized_text,
+        ):
+            start = occurrence.start()
+            end = occurrence.end()
+
+            for opening, closing in quote_pairs:
+                left = normalized_text.rfind(opening, 0, start + 1)
+                right = normalized_text.find(closing, end)
+
+                if left != -1 and right != -1 and left < start < right:
+                    return True
+
+        return False
 
     @staticmethod
     def _has_meta_context(normalized_text: str) -> bool:
@@ -135,8 +136,6 @@ class RuleGuard:
         )
 
     def analyze(self, text: str) -> RuleGuardResult:
-        """Return matched rule evidence and a bounded heuristic risk score."""
-
         if not isinstance(text, str):
             raise TypeError("RuleGuard input must be a string")
 
@@ -146,7 +145,6 @@ class RuleGuard:
         for rule in RULES:
             for pattern in rule.patterns:
                 match = re.search(pattern, normalized_text)
-
                 if match:
                     matches.append(
                         RuleMatch(
@@ -155,20 +153,22 @@ class RuleGuard:
                             matched_text=match.group(0),
                         )
                     )
-                    # A rule contributes at most once, even if multiple variants match.
                     break
 
-        score = min(sum(match.weight for match in matches), 1.0)
+        # Context reduction is match-local. A harmless quoted example no longer
+        # reduces the confidence of a separate direct attack in the same prompt.
+        meta_context = self._has_meta_context(normalized_text)
+        effective_weights: list[float] = []
 
-        if matches:
-            quoted_match = any(
-                self._is_quoted(normalized_text, match.matched_text)
-                for match in matches
-            )
-            meta_context = self._has_meta_context(normalized_text)
+        for match in matches:
+            weight = match.weight
+            if self._is_quoted(normalized_text, match.matched_text):
+                weight *= META_CONTEXT_MULTIPLIER
+            elif meta_context and len(matches) == 1:
+                weight *= META_CONTEXT_MULTIPLIER
+            effective_weights.append(weight)
 
-            if quoted_match or meta_context:
-                score *= META_CONTEXT_MULTIPLIER
+        score = min(sum(effective_weights), 1.0)
 
         return RuleGuardResult(
             score=round(score, 2),

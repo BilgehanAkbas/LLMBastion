@@ -10,6 +10,7 @@ from app.routers import api_v1
 class FakeRuleResult:
     score = 0.0
     matched_rules = ()
+    matches = ()
 
 
 class FakeSemanticResult:
@@ -46,10 +47,16 @@ def test_guard_does_not_call_provider(monkeypatch):
         "decide_assessment",
         lambda assessment: FakeDecision(),
     )
+    monkeypatch.setattr(
+        api_v1,
+        "save_request_audit",
+        lambda *args, **kwargs: None,
+    )
 
     result = asyncio.run(
         api_v1.guard(
-            api_v1.GuardRequest(input="Merhaba")
+            api_v1.GuardRequest(input="Merhaba"),
+            db=object(),
         )
     )
 
@@ -152,6 +159,7 @@ def test_chat_completions_rejects_streaming():
         )
 
     assert getattr(exc_info.value, "status_code", None) == 400
+
 
 def test_chat_completions_rejects_unconfigured_model(monkeypatch):
     called = False

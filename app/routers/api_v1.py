@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from typing import Annotated, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from starlette import status
 from ..core.config import GROQ_MODEL
 from ..core.observability import get_request_id
 from ..policies.input_policy import PolicyAction
+from ..services.audit import save_request_audit
 from .gateway import (
     ChatRequest,
     ChatResponse,
@@ -41,8 +43,15 @@ class GuardResponse(BaseModel):
 
 
 @router.post("/guard", response_model=GuardResponse)
-async def guard(request: GuardRequest):
+async def guard(request: GuardRequest, db: db_dependency):
+    request_id = get_request_id() or str(uuid4())
+    request_started = time.perf_counter()
+
+    rule_started = time.perf_counter()
     rule_result = rule_guard.analyze(request.input)
+    rule_latency_ms = (time.perf_counter() - rule_started) * 1000
+
+    semantic_started = time.perf_counter()
     try:
         semantic_result = semantic_guard.analyze(request.input)
     except RuntimeError as exc:
@@ -50,6 +59,7 @@ async def guard(request: GuardRequest):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    semantic_latency_ms = (time.perf_counter() - semantic_started) * 1000
 
     assessment = risk_engine.assess(
         rule_score=rule_result.score,
@@ -57,8 +67,45 @@ async def guard(request: GuardRequest):
     )
     decision = input_policy.decide_assessment(assessment)
 
+    detector_results = [
+        {
+            "detector_name": "rule_guard",
+            "score": rule_result.score,
+            "evidence": [
+                {
+                    "rule_id": match.rule_id,
+                    "weight": match.weight,
+                    "matched_text": match.matched_text,
+                }
+                for match in rule_result.matches
+            ],
+            "latency_ms": rule_latency_ms,
+        },
+        {
+            "detector_name": "semantic_guard",
+            "score": semantic_result.score,
+            "evidence": {
+                "triggered": (
+                    "semantic_guard" in assessment.triggered_detectors
+                ),
+                "threshold": risk_engine.semantic_threshold,
+            },
+            "latency_ms": semantic_latency_ms,
+        },
+    ]
+
+    total_latency_ms = (time.perf_counter() - request_started) * 1000
+    save_request_audit(
+        db,
+        request_id=request_id,
+        risk_score=assessment.risk_score,
+        action=decision.action.value,
+        latency_ms=total_latency_ms,
+        detector_results=detector_results,
+    )
+
     return GuardResponse(
-        request_id=get_request_id() or "standalone-guard",
+        request_id=request_id,
         action=decision.action,
         risk_score=assessment.risk_score,
         semantic_score=semantic_result.score,
@@ -74,11 +121,7 @@ class CompletionMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=200,
-    )
+    model: str | None = Field(default=None, min_length=1, max_length=200)
     messages: list[CompletionMessage] = Field(min_length=1, max_length=1)
     stream: bool = False
 

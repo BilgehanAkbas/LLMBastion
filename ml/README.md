@@ -1,17 +1,11 @@
-# ML experiments
+﻿# SemanticGuard v2
 
-## SemanticGuard v2
+This folder contains only the files required to reproduce the selected
+SemanticGuard v2 runtime model.
 
-The runtime SemanticGuard model is trained with the checked-in multilingual v2 splits:
+- `build_semantic_guard_v2_artifact.py` builds the runtime artifact from the
+  frozen training split.
+- `semantic_guard_v2_report.json` contains the held-out evaluation summary.
 
-```powershell
-python ml\train_semantic_guard_v2.py
-```
-
-The script fits word and character TF-IDF + Logistic Regression candidates on `train.jsonl`, chooses a model and threshold on `validation.jsonl`, then reports the held-out-test metrics. The selected pipeline is written to `app/artifacts/semantic_guard_v2.joblib`, which is intentionally ignored by Git.
-
-The committed `semantic_guard_v2_report.json` records the reproducible selected configuration and final evaluation result.
-
-## Earlier experiments
-
-The remaining scripts document the project’s earlier baseline, calibration, and public-benchmark experiments. They are retained for provenance; SemanticGuard v2 is the runtime model.
+The generated `.joblib` artifact lives under `app/artifacts/` and is ignored
+by Git.

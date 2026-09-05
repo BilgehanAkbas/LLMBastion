@@ -12,7 +12,10 @@
 {% endblock %}
 
 {% block content %}
-<div class="playground-shell">
+<div
+    class="playground-shell"
+    data-dashboard-enabled="{{ 'true' if request.app.state.is_development else 'false' }}"
+>
     <aside class="security-sidebar">
         <div>
             <div class="eyebrow">SECURE LLM GATEWAY</div>

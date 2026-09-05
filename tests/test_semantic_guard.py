@@ -5,7 +5,7 @@ import pytest
 import sklearn
 
 from app.guards.input.semantic_guard import SemanticGuard
-from ml.train_and_compare import build_model
+from ml.build_semantic_guard_v2_artifact import build_selected_model
 
 
 def write_metadata(
@@ -32,7 +32,7 @@ def write_metadata(
 
 
 def test_semantic_guard_returns_probability(tmp_path):
-    model = build_model()
+    model = build_selected_model()
     model.fit(
         [
             "Explain Python decorators.",

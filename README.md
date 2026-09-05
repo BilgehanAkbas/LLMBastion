@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-LLMBastion v1.0 is a self-hosted, API-first **Turkish-English LLM security gateway** for prompt-injection detection, sensitive-output protection, and security observability. The stable runtime uses the tested hybrid RuleGuard + SemanticGuard v2 pipeline. Experimental candidates that did not pass the project's validation gate are not promoted into the runtime.
+LLMBastion is a self-hosted, API-first **Turkish-English LLM security gateway** for prompt-injection detection, sensitive-output protection, and security observability. The stable runtime uses the tested hybrid RuleGuard + SemanticGuard v2 pipeline. Experimental candidates that did not pass the project's validation gate are not promoted into the runtime.
 
 ## Highlights
 
@@ -117,7 +117,7 @@ FNR:       0.044
 TP: 86  FP: 6  TN: 84  FN: 4
 ```
 
-These figures are an internal, leakage-controlled evaluation result—not a production guarantee. The held-out labels are included for reproducibility and must not be used to tune future hyperparameters or thresholds.
+These figures are an internal, leakage-controlled evaluation resultâ€”not a production guarantee. The held-out labels are included for reproducibility and must not be used to tune future hyperparameters or thresholds.
 
 The full report is at `ml/semantic_guard_v2_report.json`; split details are at `data/llmbastion_dataset/SPLIT_REPORT.json`.
 
@@ -154,9 +154,9 @@ Provider SDK calls are executed through Starlette's threadpool so synchronous up
 
 Provider failures are classified as:
 
-- configuration error → HTTP `503`
-- invalid/empty provider response → HTTP `502`
-- unexpected upstream failure → generic HTTP `502`
+- configuration error â†’ HTTP `503`
+- invalid/empty provider response â†’ HTTP `502`
+- unexpected upstream failure â†’ generic HTTP `502`
 
 Provider telemetry stores the provider name, success/error status, generic error type, and latency. Raw model responses and low-level SDK exception details are not persisted in provider telemetry.
 
@@ -189,7 +189,7 @@ LLMBastion does not persist full raw prompts or raw model responses as request p
 
 - DataGuard stores finding metadata rather than detected sensitive values.
 - Provider telemetry stores generic provider status/error metadata only.
-- RuleGuard may store the specific matched substring used as rule evidence.
+- RuleGuard audit stores rule identifiers and weights only; matched prompt text is removed before persistence.
 
 ## Run locally
 
@@ -199,7 +199,7 @@ Requires Python 3.12+.
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
@@ -253,7 +253,7 @@ GitHub Actions rebuilds the frozen SemanticGuard v2 runtime artifact and runs th
 
 ## Limitations
 
-LLMBastion v1.0 is a focused security gateway, not a complete prompt-injection or data-loss-prevention solution.
+LLMBastion is a focused security gateway, not a complete prompt-injection or data-loss-prevention solution.
 
 - The ML classifier depends on its training distribution and can miss unfamiliar attacks.
 - RuleGuard relies on explicit deterministic rules.
@@ -261,12 +261,12 @@ LLMBastion v1.0 is a focused security gateway, not a complete prompt-injection o
 - Groq is the only implemented provider today.
 - Development can use the in-memory limiter; shared deployments should use the Redis backend.
 - The dashboard is development-only and has no authentication.
-- The public API has no built-in client authentication in v1.0; do not expose it to untrusted networks without an access-control layer or trusted reverse proxy.
+- The public API has no built-in client authentication by default; do not expose it to untrusted networks without an access-control layer or trusted reverse proxy.
 - The risk policy is a tested OR rule, not a learned multi-signal risk model.
 
 ## Background
 
-The project was motivated in part by [Yapay Zeka Ajanları Şirketleri Nasıl Hackliyor](https://medium.com/@bilgehanakbas/yapay-zeka-ajanlar%C4%B1-%C5%9Firketleri-nas%C4%B1l-hackliyor-b6e0308b7cea), an article on the security risks around AI agents.
+The project was motivated in part by [Yapay Zeka AjanlarÄ± Åirketleri NasÄ±l Hackliyor](https://medium.com/@bilgehanakbas/yapay-zeka-ajanlar%C4%B1-%C5%9Firketleri-nas%C4%B1l-hackliyor-b6e0308b7cea), an article on the security risks around AI agents.
 
 ## License
 

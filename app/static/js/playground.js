@@ -3,6 +3,8 @@
     const sendButton = document.getElementById("sendButton");
     const messages = document.getElementById("messages");
     const characterCount = document.getElementById("characterCount");
+    const playgroundShell = document.querySelector(".playground-shell");
+    const dashboardEnabled = playgroundShell?.dataset.dashboardEnabled === "true";
 
     if (!input || !sendButton || !messages) {
         return;
@@ -111,7 +113,7 @@
     };
 
     const addDashboardLink = (card, requestId) => {
-        if (!requestId) {
+        if (!dashboardEnabled || !requestId) {
             return;
         }
 
