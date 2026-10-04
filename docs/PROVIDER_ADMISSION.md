@@ -1,54 +1,92 @@
-﻿# Provider admission and bounded queue
+# Provider admission and bounded queue
 
-Runtime defaults: `GROQ_MAX_CONCURRENT_REQUESTS=4`, `GROQ_MAX_QUEUED_REQUESTS=16`. Positive concurrency and nonnegative queue limits are validated. Queue=0 rejects immediately whenever all active slots are occupied. Limits are per application process/event loop; N workers can have N times the configured capacity. No new dependency, queue framework, fallback or retry policy was added.
+LLMBastion bounds provider work per application process/event loop. Admission
+runs after input policy allows a request; blocked requests never enter the queue
+or call Groq.
+
+## Configuration
+
+| Setting | Default | Meaning |
+| --- | ---: | --- |
+| `GROQ_MAX_CONCURRENT_REQUESTS` | `4` | Maximum active provider operations; must be positive |
+| `GROQ_MAX_QUEUED_REQUESTS` | `16` | Maximum waiting operations; must be nonnegative |
+| `GROQ_TOTAL_DEADLINE_SECONDS` | `20` | Shared budget for queue wait, setup, network waits, retries and backoff |
+
+A queue limit of `0` rejects immediately when all active slots are occupied.
+Each worker has its own limits; multiple workers multiply available capacity.
+Redis-backed ingress rate limiting is separate from provider admission.
 
 ## Flow and ownership
 
-Input guards → policy → BLOCK return, or total provider deadline → admission slot → AsyncGroq generation/retries → release slot → DataGuard → response.
+```text
+Input guards -> policy -> BLOCK: return without provider work
+                       -> ALLOW: total provider deadline
+                                 -> admission slot
+                                 -> AsyncGroq generation / retries / response validation
+                                 -> release slot
+                                 -> DataGuard -> response
+```
 
-`ProviderAdmission` uses asyncio.BoundedSemaphore and a waiter counter. Admission check/count update has no await gap. Semaphore locked state includes pending handoffs, so new arrivals do not overtake existing waiters. Queue count includes a woken waiter until it resumes, conservatively bounding pending work. A slot covers the entire provider operation including retries/backoff, and releases in finally after completion, exception or cancellation. A cancelled waiter removes its queue count; semaphore cancellation restores a permit even during handoff.
+`ProviderAdmission` uses an `asyncio.BoundedSemaphore` and a waiter counter.
+Admission checking and counting have no await gap. Pending handoffs count as
+occupied capacity, so new arrivals do not overtake existing waiters. A woken
+waiter stays in the queue count until it resumes.
 
-The limiter is recreated during application lifespan startup because asyncio waiters belong to that event loop. As with the existing pooled AsyncGroq client, concurrently running independent applications must not share the global runtime instance. BLOCK never enters admission. Direct provider.generate callers are outside gateway admission; the repository's runtime provider call site is the gateway route.
+A slot covers generation, retries and backoff. Completion, exceptions and
+cancellation release it in `finally`; cancelled waiters remove their queue
+count. Admission is recreated at lifespan startup for the current event loop.
+Independent concurrent applications must not share the global gateway runtime.
+Direct calls to `provider.generate` bypass gateway admission.
 
-Queue wait is inside `GROQ_TOTAL_DEADLINE_SECONDS=20`, together with setup, HTTP waits and retries. The budget is never reset on slot acquisition. After a handoff the gateway checks the deadline again before dispatch, preventing a late timer callback from starting an expired request. This remains cooperative asyncio cancellation; input guard/DB work, output guard/audit time and remote provider computation are not bounded by this provider budget. Ingress connections, pre-policy work and multi-worker global capacity are outside this small admission layer.
+Queue waiting consumes the same total deadline as generation; acquiring a slot
+does not reset it. The gateway checks expiry again before dispatch after a
+handoff. This cooperative provider budget excludes input guards, database work,
+DataGuard and audit persistence. It does not bound ingress connections or remote
+provider computation. See [async deadlines](PROVIDER_ASYNC_DEADLINE.md).
 
 ## Error contract
 
-| Condition | HTTP | Audit action | Provider error_type |
-|---|---|---|---|
-| Provider failure / upstream 429 or 500 | 502 | ERROR | request_failed |
-| SDK phase timeout | 502 | ERROR | provider_timeout |
-| Total deadline during generation/backoff | 502 | ERROR | deadline_exceeded |
-| Total deadline while queued / before dispatch | 502 | ERROR | admission_deadline_exceeded |
-| Queue full | 503 | ERROR | overloaded |
+| Condition | HTTP | Audit action | Provider `error_type` |
+| --- | ---: | --- | --- |
+| Provider failure / upstream 429 or 500 | 502 | ERROR | `request_failed` |
+| SDK phase timeout | 502 | ERROR | `provider_timeout` |
+| Total deadline during generation/backoff | 502 | ERROR | `deadline_exceeded` |
+| Total deadline while queued / before dispatch | 502 | ERROR | `admission_deadline_exceeded` |
+| Queue full | 503 | ERROR | `overloaded` |
+| Missing provider configuration | 503 | ERROR | `configuration` |
+| Invalid or empty completion | 502 | ERROR | `invalid_response` |
 
-Generic 502 detail remains `LLM provider request failed`. Overload uses `LLM provider busy` and the existing structured `service_unavailable` response; production sanitizes its message to `Service temporarily unavailable`. Missing provider config and invalid completion retain their existing distinct paths. DataGuard only runs after a successful provider response. No raw prompts, responses, private error details or credentials were added to admission telemetry/audit. Failure privacy tests check structured logs, response and audit.
+In development, ordinary provider failures use `LLM provider request failed`.
+Invalid completions use `LLM provider returned an invalid response`. Overload
+uses `LLM provider busy` and structured `service_unavailable`. Production
+sanitizes all HTTP `502` messages to `Upstream service error` and all HTTP `503`
+messages to `Service temporarily unavailable`; audit error types remain distinct.
 
-## Actual synthetic load results
-
-Real AsyncGroq/HTTPX with controlled async transport; no Groq network calls. Guards and audit persistence are mocked to isolate this gateway/provider behavior; policy, admission, deadline, SDK, error paths and DataGuard run. HTTP response contract is separately tested through ASGI routing in development and production. These are deterministic correctness checks, not provider throughput benchmarks.
-
-| Scenario | Active limit | Queue limit | Observed max upstream | Peak queued | Overload rejects | Deadline before provider |
-|---|---:|---:|---:|---:|---:|---:|
-| Below limit | 4 | 16 | 3 | 0 | 0 | 0 |
-| Above limit | 4 | 16 | 4 | 16 | 0 | 0 |
-| Queue full | 2 | 3 | 2 | 3 | 3 | 0 |
-| Queued deadline | 1 | 2 | 1 | 2 | 0 | 2 |
-| Provider timeout | 1 | 2 | 1 | 2 | 0 | 0 |
-| Mixed | 2 | 8 | 2 | 4 | 0 | 0 |
-
-All six scenarios passed explicit success/error/cancellation checks. The 20 above-limit requests all returned ALLOW. Queue-full overflow made zero provider calls. Queued-deadline uses one independently held slot; the two expired gateway requests made zero provider calls. Mixed load returned three successful answers, one provider timeout, and two cancellations; cancelled queue entry made no upstream attempt. Across all scenarios: zero leaked tasks/slots/waiters; all clients closed. Every slot was reacquired concurrently after each load case to verify permit reuse, rather than relying only on active counters. Output guards ran only for successful gateway responses.
-
-Artifacts: `reports/provider_admission_load.json`, `reports/provider_admission_pytest.xml`.
+DataGuard runs only after a successful, validated provider response. Audit and
+structured application logs retain generic status/error metadata, not raw
+prompts, responses, credentials or SDK exception messages.
 
 ## Validation
 
-- Admission/concurrency/queue suite: 25 passed, including FIFO, cancelled waiter, cancellation during permit handoff, exception release, budget not reset after waiting, BLOCK bypass, distinct error types, privacy and HTTP overload contract.
-- Focused admission/async deadline/timeout/retry/validation/telemetry/provider/DataGuard suite: 147 passed.
-- Full pytest: 266 passed, 11 failed. Original 128 tests passed; all remaining failures are known SAFE false positives.
-- SAFE regression: 17 passed, 11 failed / 28, unchanged and not hidden.
-- Stable v2 SHA256: 9b1ab5ef1780b8a152f1ddb634f35cb3d617f70c1ad379c08bcd2ec09e9eadb5; threshold remains 0.51. No V3 runtime or Laya decision changes; no commit/push.
+From the repository root, after the [test setup](../README.md#tests):
 
-Commands: `.tools/python311/python.exe scripts/provider_admission_eval.py`; `.tools/python311/python.exe -m pytest tests/test_provider_admission.py -q --tb=short`; `.tools/python311/python.exe -m pytest -q --tb=short --junitxml=reports/provider_admission_pytest.xml`; `.tools/python311/python.exe -m pytest tests/test_safe_input_regression.py -q --tb=no`.
+```powershell
+python -m pytest tests/test_provider_admission.py tests/test_provider_async_deadline.py tests/test_provider_timeouts.py -q
+python scripts/provider_admission_eval.py
+```
 
-Next step: expose provider active/queued counts, overload/deadline counters and admission-wait latency in observability, so deployment capacity can be tuned from measured behavior.
+The admission tests cover queue bounds, FIFO handoffs, cancelled waiters,
+cancellation during handoff, exception release, deadline preservation, BLOCK
+bypass, error types, privacy and the HTTP overload contract.
+
+The evaluator uses real AsyncGroq/HTTPX with controlled local async transport;
+it makes no Groq network calls. Guards and audit persistence are mocked to
+isolate policy, admission, deadline, provider errors and DataGuard. Scenarios
+cover below/above capacity, queue overflow, queued deadlines, provider timeout
+and mixed success/cancellation. These are correctness checks, not production
+throughput benchmarks.
+
+The evaluator generates `reports/provider_admission_load.json` locally; that
+ignored output is not shipped in the checkout. Use the [product release gate](../README.md#tests)
+for the recorded baseline and current full-suite command. Earlier migration
+counts and SAFE failures describe superseded implementations, not this release.

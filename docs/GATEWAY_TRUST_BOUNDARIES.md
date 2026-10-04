@@ -1,8 +1,28 @@
 # Gateway trust boundaries — tasarım notu
 
-Bu not tasarımdır; mevcut runtime'a tool/RAG veya yeni karar katmanı eklemez.
+Bu not gelecekteki tool/RAG entegrasyonları için tasarımdır. Retrieval, tool
+execution, ActionGuard, tenant/ACL denetimi ve semantik output policy mevcut
+üründe uygulanmış özellikler değildir.
 
-## Kaynakların anlamı
+## Mevcut runtime
+
+```text
+Rate/body limit → RuleGuard + SemanticGuard v2 → benign-intent adapter → Policy
+    BLOCK → provider çağrısı olmadan cevap
+    ALLOW → deadline + admission → AsyncGroq → response validation → DataGuard → cevap
+```
+
+Mevcut API tek user mesajı ve metin cevabı destekler. DataGuard yalnızca
+provider çıktısındaki desteklenen hassas formatları redakte eder; kullanıcı
+girdisini provider'a göndermeden önce redakte etmez. Client authentication
+yerleşik değildir. Ayrıntılar için [README](../README.md) ve
+[provider admission](PROVIDER_ADMISSION.md) belgelerine bakın.
+
+## Önerilen kaynak güven modeli
+
+Aşağıdaki tablo mevcut input/output guard'ları ile gelecekte uygulanması
+gereken kaynak, yetki ve audit kontrollerini birlikte açıklar. Doküman/tool
+kaynak türü ve ActionGuard kayıtları mevcut audit şemasının özellikleri değildir.
 
 | Kaynak | Güven düzeyi | Guard / kontrol | Injection riski | Action izni | Audit/log |
 |---|---|---|---|---|---|
@@ -12,7 +32,7 @@ Bu not tasarımdır; mevcut runtime'a tool/RAG veya yeni karar katmanı eklemez.
 | D. System/developer instruction | Yalnızca sunucu kontrolündeki sürümlenmiş yapılandırma yetkili | Kaynak doğrulama, değişiklik incelemesi, sürüm/integrity kontrolü. Güvenilmez kaynaklardan bu role yükseltme yasak | Şablona güvenilmez talimat ekleme, yanlış role yerleştirme | Talimatlar araç capability üst sınırını tanımlar; sunucu authorization yine zorunlu | Policy/template sürümü; ham system prompt veya secret yok |
 | E. Model output | Güvenilmez üretilmiş veri | Provider response validation → DataGuard; gelecekte ayrı semantik output policy. Tool çağrıları için schema + ActionGuard | Hassas veri, zararlı içerik, beklenmeyen action/argüman | Model tool seçimi yalnızca öneridir; execute öncesi sunucuda yetki denetimi | Output finding türü/sayısı, action, tool izin sonucu, süre; raw cevap yok |
 
-## Mevcut gateway'e uygun sıra
+## Gelecekteki RAG/tool entegrasyonu için önerilen sıra
 
 ```text
 User input → mevcut input guard'lar → Policy

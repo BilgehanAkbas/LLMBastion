@@ -1,24 +1,35 @@
 # Product repository boundary
 
-The main repository contains production source/configuration, migrations,
-SemanticGuard v2 reproducibility inputs, product tests/fixtures, documentation,
-CI and dependency files. The v2 artifact and thresholds are unchanged.
+This checkout contains product source/configuration, migrations, SemanticGuard
+v2 reproducibility inputs, product tests/fixtures, documentation, CI and current
+evaluator scripts. The stable decision path is RuleGuard + SemanticGuard v2
+with the benign-intent adapter; the semantic threshold remains `0.51`.
 
-Root SemanticGuard v3 experiment directories have been removed. Small historical
-sources, manifests and summaries were moved to the sibling research archive at
-`LLMBastion-research-archive/local-final-cleanup-20261004/future-reference/`.
-Superseded generated outputs were deleted. Previously archived large files were
-not copied again. See [research status](research/README.md).
+## Product and research
 
-The main publication set contains only product source, tests, documentation and
-current evaluator scripts. V3 shadow runtime/helpers, optional dependencies and
-historical tests are in the external archive under `source-and-tests/`.
-Both ordinary pytest and the existing product marker command run the complete
-product suite; research modules in the product test directory cause an error.
+SemanticGuard v3+ experiments, shadow runtime/helpers, optional research
+dependencies and historical tests are outside this checkout. Research is paused;
+see [research status](research/README.md).
 
-Local .env, llmbastion.db and .git are preserved. The small registered Git
-worktree under .kilo/ is retained because it contains another product checkout
-and is referenced by .git worktree metadata. It is not a research experiment.
+Both ordinary pytest and the product marker command collect the complete
+product suite. Collection rejects research-only modules in the product test
+directory instead of hiding or skipping them:
 
-The current product command is `python -m pytest -m "not research" -q`.
-No model training, threshold change, staging, commit or push is part of cleanup.
+```powershell
+python -m pytest -q
+python -m pytest -m "not research" -q
+```
+
+See [test setup and recorded release baseline](../README.md#tests) and
+[test contracts](../tests/README.md).
+
+## Local files and generated outputs
+
+Local environment files, databases, virtual environments, generated model
+artifacts and `reports/` outputs are excluded from publication by `.gitignore`.
+The model artifact is rebuilt from the frozen training split; its committed
+metadata and reproducibility inputs remain in the product repository.
+
+The maintainer's cleanup preserved local `.env`, `llmbastion.db`, `.git` and the
+registered `.kilo/` worktree. These are local workspace details, not requirements
+for a fresh clone.
