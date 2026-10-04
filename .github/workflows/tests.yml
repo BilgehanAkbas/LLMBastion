@@ -7,6 +7,9 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    env:
+      APP_ENV: development
+      RATE_LIMIT_BACKEND: memory
 
     steps:
       - name: Check out repository
@@ -26,5 +29,5 @@ jobs:
       - name: Build SemanticGuard v2 artifact
         run: python ml/build_semantic_guard_v2_artifact.py
 
-      - name: Run tests
-        run: python -m pytest -q
+      - name: Run product release gate
+        run: python -m pytest -m "not research" -q

@@ -1,3 +1,7 @@
+import math
+
+import httpx
+
 from .errors import (
     ProviderConfigurationError,
     ProviderResponseError,
@@ -5,6 +9,8 @@ from .errors import (
 
 
 DEFAULT_MAX_TOKENS = 500
+DEFAULT_TIMEOUT_SECONDS = 20.0
+DEFAULT_MAX_RETRIES = 0
 DEFAULT_SYSTEM_PROMPT = (
     "You are the response model behind LLMBastion, an LLM security "
     "gateway demo. Answer the user's actual question directly. "
@@ -26,22 +32,56 @@ class GroqProvider:
         *,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ):
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be finite and greater than 0")
+        if type(max_retries) is not int or not 0 <= max_retries <= 2:
+            raise ValueError("max_retries must be an integer between 0 and 2")
         self.api_key = api_key
         self.model = model
         self.max_tokens = max_tokens
         self.system_prompt = system_prompt
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
+        self._client = None
 
-    def generate(self, message: str) -> str:
+    def _get_client(self):
         if not self.api_key:
             raise ProviderConfigurationError(
                 "GROQ_API_KEY is not configured"
             )
 
-        from groq import Groq
+        from groq import AsyncGroq
 
-        client = Groq(api_key=self.api_key)
-        completion = client.chat.completions.create(
+        # No await during initialization: concurrent tasks on the app loop
+        # cannot interleave here. The pooled client belongs to that loop.
+        if self._client is None:
+            self._client = AsyncGroq(
+                api_key=self.api_key,
+                timeout=httpx.Timeout(
+                    self.timeout_seconds,
+                    connect=min(5.0, self.timeout_seconds),
+                ),
+                max_retries=self.max_retries,
+            )
+        return self._client
+
+    async def close(self) -> None:
+        # Called after the ASGI server has drained requests during shutdown.
+        client, self._client = self._client, None
+        if client is not None:
+            await client.close()
+
+    async def generate(self, message: str) -> str:
+        client = self._get_client()
+        completion = await client.chat.completions.create(
             model=self.model,
             messages=[
                 {
@@ -56,10 +96,19 @@ class GroqProvider:
             max_tokens=self.max_tokens,
         )
 
-        content = completion.choices[0].message.content
-        if content is None or not str(content).strip():
+        choices = getattr(completion, "choices", None)
+        if not isinstance(choices, (list, tuple)) or not choices:
+            raise ProviderResponseError("Groq returned a malformed response")
+
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", None)
+        if content is None:
             raise ProviderResponseError(
                 "Groq returned an empty response"
             )
+        if not isinstance(content, str):
+            raise ProviderResponseError("Groq returned invalid response content")
+        if not content.strip():
+            raise ProviderResponseError("Groq returned an empty response")
 
-        return str(content)
+        return content

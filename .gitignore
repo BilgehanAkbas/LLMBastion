@@ -5,8 +5,8 @@
 
 # Local databases
 *.db
-*.sqlite
-*.sqlite3
+*.db-*
+*.sqlite*
 
 # Python
 __pycache__/
@@ -20,6 +20,9 @@ htmlcov/
 .venv/
 venv/
 env/
+.tools/
+.playwright-mcp/
+.kilo/
 
 # IDE
 .idea/
@@ -33,3 +36,35 @@ Thumbs.db
 app/artifacts/*.joblib
 app/artifacts/*.metadata.json
 app/artifacts/*_meta.json
+
+# Local shadow observations, never a dataset or committed user traffic.
+data/semantic_v3_shadow/
+
+# Paused research: retain sources/tests, not local populations or model outputs.
+/semantic_guard_v3_*/
+/app/artifacts/semantic_guard_v3_*/
+/ml/semantic_guard_v3_*.json
+/reports/
+# No configured research runner: keep the historical draft local.
+/.github/workflows/research-tests.yml
+# Superseded generated research validation notes remain local.
+/docs/LAYA_SHADOW_POC.md
+/docs/semantic_guard_v3_shadow_validation.md
+**/checkpoints/
+**/checkpoint-*/
+.cache/
+.huggingface/
+huggingface/
+
+# Generated test, log and editor output.
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+pytest*.xml
+*_pytest.xml
+junit*.xml
+.ruff_cache/
+.hypothesis/
+coverage.xml

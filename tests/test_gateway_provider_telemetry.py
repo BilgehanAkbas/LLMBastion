@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from unittest.mock import AsyncMock
 from fastapi import HTTPException
 
 from app.providers.errors import ProviderConfigurationError
@@ -31,7 +32,7 @@ async def test_successful_provider_call_is_audited(monkeypatch):
     monkeypatch.setattr(
         gateway.provider,
         "generate",
-        lambda message: "safe model response",
+        AsyncMock(return_value="safe model response"),
     )
 
     audits = []
@@ -65,7 +66,7 @@ async def test_successful_provider_call_is_audited(monkeypatch):
 async def test_provider_configuration_failure_is_audited(monkeypatch):
     _patch_safe_input(monkeypatch)
 
-    def fail(message):
+    async def fail(message):
         raise ProviderConfigurationError(
             "GROQ_API_KEY is not configured"
         )
@@ -112,7 +113,7 @@ async def test_unexpected_provider_failure_is_generic_and_audited(
 ):
     _patch_safe_input(monkeypatch)
 
-    def fail(message):
+    async def fail(message):
         raise RuntimeError("upstream internal details")
 
     monkeypatch.setattr(

@@ -36,8 +36,7 @@ returned under the `llmbastion` field. The existing `POST /api/v1/chat`
 endpoint remains available for the built-in Playground and backward
 compatibility.
 
-The stable blocking path remains `RuleGuard + SemanticGuard v2`. Experimental
-candidates are promoted only after passing the project's validation gate.
+The stable blocking path remains `RuleGuard + SemanticGuard v2`. SemanticGuard v3 research is paused and is not production routing.
 
 The compatibility endpoint uses the provider model configured through
 `GROQ_MODEL`. A supplied `model` field must match that configured model;
@@ -47,50 +46,26 @@ called upstream.
 ## Architecture
 
 ```text
-User Prompt
-    |
-    v
-Rate Limiter
-    |
-    +----------------------+
-    |                      |
-    v                      v
-RuleGuard             SemanticGuard v2
-Regex rules           TF-IDF + Logistic Regression
-    |                      |
-    +----------+-----------+
-               |
-               v
-           RiskEngine
-               |
-            Policy
-          /        \
-       BLOCK      ALLOW
-         |          |
-       Audit    LLMProvider
-                    |
-                    v
-              Provider Factory
-                    |
-                   Groq
-                    |
-                    v
-               DataGuard v2
-                    |
-                  Audit
-                    |
-                   User
+User -> RuleGuard -> SemanticGuard v2 -> benign-intent adapter
+     -> RiskEngine / Policy -> Groq (async) -> DataGuard -> User
 ```
 
-A blocked request never reaches the LLM provider. An allowed request is sent through the configured provider, then the model response is scanned by `DataGuard v2` before it is returned to the user.
+Rate limiting precedes input inspection. A blocked request never reaches Groq.
+RuleGuard detects explicit injection/bypass attempts; SemanticGuard v2 uses
+TF-IDF and logistic regression. RiskEngine blocks on a RuleGuard score of at
+least 0.50 or an effective semantic score of at least 0.51.
 
-- `RuleGuard` detects explicit instruction overrides, system-prompt extraction, jailbreaks, and security-bypass attempts.
-- `SemanticGuard v2` estimates prompt-injection probability with a multilingual TF-IDF + Logistic Regression classifier.
-- `RiskEngine` blocks when either guard meets its tested threshold: RuleGuard `>= 0.50` or SemanticGuard v2 `>= 0.51`.
-- `LLMProvider` defines the minimal provider contract; provider construction is isolated behind a factory.
-- `DataGuard v2` redacts emails, Turkish mobile numbers, JWTs, selected provider tokens, private-key blocks, validated Turkish IBANs, and Luhn-valid payment-card numbers.
-- Provider status and latency are recorded without storing raw provider responses.
-- The local dashboard exposes request, detector, provider, redaction, error, and latency telemetry.
+The adapter neutralizes only the semantic false-positive signal for confidently
+recognized editing, tone/style, summarization, previous-draft editing and benign
+topic switches. RuleGuard matches, protected instructions, manipulation wording
+and encoded/structured payloads prevent an override. Other guards and policy
+remain active. API `semantic_score` retains the original model score; audit
+metadata records the override, intent family and original score.
+
+DataGuard scans allowed provider responses and redacts supported sensitive
+formats. Audit stores detector and provider metadata, not raw user prompts or
+provider responses. The provider interface and factory isolate Groq from the
+security pipeline.
 
 ## SemanticGuard v2 evaluation
 
@@ -117,7 +92,7 @@ FNR:       0.044
 TP: 86  FP: 6  TN: 84  FN: 4
 ```
 
-These figures are an internal, leakage-controlled evaluation resultâ€”not a production guarantee. The held-out labels are included for reproducibility and must not be used to tune future hyperparameters or thresholds.
+These historical internal classifier metrics are not a production guarantee. Held-out labels must not be used to tune future hyperparameters or thresholds.
 
 The full report is at `ml/semantic_guard_v2_report.json`; split details are at `data/llmbastion_dataset/SPLIT_REPORT.json`.
 
@@ -150,13 +125,14 @@ GroqProvider
 
 `GroqProvider` is the only implemented provider today. Adding another provider can be done behind the same interface without changing the gateway's security pipeline.
 
-Provider SDK calls are executed through Starlette's threadpool so synchronous upstream SDK calls do not block FastAPI's async event loop.
+Groq uses a pooled `AsyncGroq` client with awaited calls, bounded admission,
+request deadlines and explicit client shutdown. Calls do not use a threadpool.
 
 Provider failures are classified as:
 
-- configuration error â†’ HTTP `503`
-- invalid/empty provider response â†’ HTTP `502`
-- unexpected upstream failure â†’ generic HTTP `502`
+- configuration error: HTTP `503`
+- invalid/empty provider response: HTTP `502`
+- unexpected upstream failure: generic HTTP `502`
 
 Provider telemetry stores the provider name, success/error status, generic error type, and latency. Raw model responses and low-level SDK exception details are not persisted in provider telemetry.
 
@@ -199,9 +175,13 @@ Requires Python 3.12+.
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
+
+On Linux/macOS, activate with `source .venv/bin/activate` and copy the environment
+template with `cp .env.example .env`. Fill in your Groq key locally; never commit
+`.env`.
 
 Example `.env`:
 
@@ -216,7 +196,7 @@ RATE_LIMIT_WINDOW_SECONDS=60
 Build the already-selected SemanticGuard v2 runtime artifact without touching the held-out test set:
 
 ```powershell
-python ml\build_semantic_guard_v2_artifact.py
+python ml/build_semantic_guard_v2_artifact.py
 ```
 
 Then start the API:
@@ -245,13 +225,36 @@ starting Uvicorn.
 
 ## Tests
 
+Product release gate (only `requirements-dev.txt` is needed):
+
 ```powershell
-python -m pytest -q
+python -m pip install -r requirements-dev.txt
+python -m pytest -m "not research" -q
 ```
 
-GitHub Actions rebuilds the frozen SemanticGuard v2 runtime artifact and runs the full test suite on pushes and pull requests. A release should only be created from a green test run.
+The main repository contains product tests only. Both commands run the complete
+product suite:
+
+```powershell
+python -m pytest -q
+python -m pytest -m "not research" -q
+```
+
+Collection checks reject research-only test modules instead of silently hiding
+them. No tests are skipped or xfailed. Historical research sources and tests
+live in an external archive; see [research status](docs/research/README.md).
+
+GitHub Actions rebuilds the frozen SemanticGuard v2 runtime artifact and runs
+the product release gate on pushes and pull requests. See
+[test contracts](tests/README.md).
 
 ## Limitations
+
+### SemanticGuard v3
+
+Research is paused and archived outside the main repository. V3 runtime,
+shadow observers, helpers and historical tests are not part of this product
+checkout. See [research status](docs/research/README.md).
 
 LLMBastion is a focused security gateway, not a complete prompt-injection or data-loss-prevention solution.
 
@@ -266,7 +269,7 @@ LLMBastion is a focused security gateway, not a complete prompt-injection or dat
 
 ## Background
 
-The project was motivated in part by [Yapay Zeka AjanlarÄ± Åirketleri NasÄ±l Hackliyor](https://medium.com/@bilgehanakbas/yapay-zeka-ajanlar%C4%B1-%C5%9Firketleri-nas%C4%B1l-hackliyor-b6e0308b7cea), an article on the security risks around AI agents.
+The project was motivated in part by [an article on AI agent security](https://medium.com/@bilgehanakbas/yapay-zeka-ajanlar%C4%B1-%C5%9Firketleri-nas%C4%B1l-hackliyor-b6e0308b7cea).
 
 ## License
 

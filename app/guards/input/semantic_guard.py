@@ -118,7 +118,7 @@ class SemanticGuard:
         self._validate_runtime_compatibility()
 
         try:
-            self._model = joblib.load(self.model_path)
+            loaded_model = joblib.load(self.model_path)
         except Exception as exc:
             raise RuntimeError(
                 "SemanticGuard model artifact could not be loaded. "
@@ -126,11 +126,12 @@ class SemanticGuard:
                 "python ml/build_semantic_guard_v2_artifact.py"
             ) from exc
 
-        if not hasattr(self._model, "predict_proba"):
+        if not callable(getattr(loaded_model, "predict_proba", None)):
             raise RuntimeError(
                 "SemanticGuard model must implement predict_proba()."
             )
 
+        self._model = loaded_model
         return self._model
 
     def ensure_ready(self) -> None:

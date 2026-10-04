@@ -1,3 +1,4 @@
+import math
 import os
 
 from dotenv import load_dotenv
@@ -18,7 +19,6 @@ if APP_ENV not in {"development", "production"}:
 
 IS_DEVELOPMENT = APP_ENV == "development"
 IS_PRODUCTION = APP_ENV == "production"
-
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
 if LOG_LEVEL not in {
@@ -51,6 +51,22 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").strip().lower()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_TIMEOUT_SECONDS = float(os.getenv("GROQ_TIMEOUT_SECONDS", "20"))
+GROQ_MAX_RETRIES = int(os.getenv("GROQ_MAX_RETRIES", "0"))
+GROQ_TOTAL_DEADLINE_SECONDS = float(os.getenv("GROQ_TOTAL_DEADLINE_SECONDS", "20"))
+GROQ_MAX_CONCURRENT_REQUESTS = int(os.getenv("GROQ_MAX_CONCURRENT_REQUESTS", "4"))
+GROQ_MAX_QUEUED_REQUESTS = int(os.getenv("GROQ_MAX_QUEUED_REQUESTS", "16"))
+
+if not math.isfinite(GROQ_TIMEOUT_SECONDS) or GROQ_TIMEOUT_SECONDS <= 0:
+    raise ValueError("GROQ_TIMEOUT_SECONDS must be finite and greater than 0")
+if not 0 <= GROQ_MAX_RETRIES <= 2:
+    raise ValueError("GROQ_MAX_RETRIES must be between 0 and 2")
+if not math.isfinite(GROQ_TOTAL_DEADLINE_SECONDS) or GROQ_TOTAL_DEADLINE_SECONDS <= 0:
+    raise ValueError("GROQ_TOTAL_DEADLINE_SECONDS must be finite and greater than 0")
+if GROQ_MAX_CONCURRENT_REQUESTS < 1:
+    raise ValueError("GROQ_MAX_CONCURRENT_REQUESTS must be at least 1")
+if GROQ_MAX_QUEUED_REQUESTS < 0:
+    raise ValueError("GROQ_MAX_QUEUED_REQUESTS must be nonnegative")
 
 
 RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "30"))

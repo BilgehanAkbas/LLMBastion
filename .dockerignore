@@ -5,9 +5,13 @@
 
 # Git
 .git
+.github
 
 # Python environments and caches
 .venv
+.tools
+.kilo
+.playwright-mcp
 venv
 env
 __pycache__
@@ -17,8 +21,8 @@ __pycache__
 
 # Local databases
 *.db
-*.sqlite
-*.sqlite3
+*.db-*
+*.sqlite*
 
 # IDE / OS
 .idea
@@ -29,3 +33,31 @@ Thumbs.db
 # Coverage output
 .coverage
 htmlcov
+
+# Research is not part of the production image. Keep the v2 builder and inputs.
+semantic_guard_v3_*
+app/artifacts/semantic_guard_v3_*
+ml/*semantic_guard_v3*
+ml/human_collection*
+ml/requirements-human-pilot.txt
+data/semantic_v3_shadow
+requirements-research.txt
+requirements-dev.txt
+tests
+reports
+docs
+scripts
+**/checkpoints
+**/checkpoint-*
+.cache
+.huggingface
+huggingface
+.ruff_cache
+.hypothesis
+*.log
+*.tmp
+*.bak
+pytest*.xml
+*_pytest.xml
+junit*.xml
+coverage.xml

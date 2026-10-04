@@ -3,9 +3,43 @@ import json
 import joblib
 import pytest
 import sklearn
+from types import SimpleNamespace
 
 from app.guards.input.semantic_guard import SemanticGuard
+from app.guards.input.semantic_guard import DEFAULT_MODEL_PATH
 from ml.build_semantic_guard_v2_artifact import build_selected_model
+
+
+@pytest.mark.parametrize("invalid_model", [{"not": "a model"}, SimpleNamespace(predict_proba=None)])
+def test_invalid_artifact_remains_unavailable_and_can_retry(tmp_path, monkeypatch, invalid_model):
+    from fastapi.testclient import TestClient
+    import app.main as main
+
+    model_path = tmp_path / "invalid.joblib"
+    joblib.dump(invalid_model, model_path)
+    write_metadata(model_path)
+    guard = SemanticGuard(model_path)
+    monkeypatch.setattr(main, "semantic_guard", guard)
+    monkeypatch.setattr(main, "_check_database_ready", lambda: None)
+    monkeypatch.setattr(main, "_check_provider_configuration", lambda: None)
+    client = TestClient(main.create_app("development"))
+    for _ in range(3):
+        assert client.get("/ready").status_code == 503
+        assert guard._model is None
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="must implement predict_proba"):
+            guard.analyze("hello")
+        assert guard._model is None
+
+    # Failed loads do not poison the instance; a repaired artifact can be retried.
+    valid_model = joblib.load(DEFAULT_MODEL_PATH)
+    joblib.dump(valid_model, model_path)
+    guard.ensure_ready()
+    assert client.get("/ready").status_code == 200
+    assert guard.analyze("hello") == SemanticGuard().analyze("hello")
+    cached_model = guard._model
+    guard.ensure_ready()
+    assert guard._model is cached_model
 
 
 def write_metadata(

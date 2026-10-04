@@ -8,3 +8,7 @@ class ProviderConfigurationError(ProviderError):
 
 class ProviderResponseError(ProviderError):
     """Raised when the upstream provider returns an unusable response."""
+
+
+class ProviderOverloadedError(ProviderError):
+    """Raised when local provider admission capacity is exhausted."""

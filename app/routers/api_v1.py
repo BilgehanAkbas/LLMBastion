@@ -12,6 +12,7 @@ from starlette import status
 from ..core.config import GROQ_MODEL
 from ..core.observability import get_request_id
 from ..policies.input_policy import PolicyAction
+from ..guards.input.benign_intent import adapt_semantic_signal
 from ..services.audit import save_request_audit
 from .gateway import (
     ChatRequest,
@@ -61,9 +62,12 @@ async def guard(request: GuardRequest, db: db_dependency):
         ) from exc
     semantic_latency_ms = (time.perf_counter() - semantic_started) * 1000
 
+    semantic_signal = adapt_semantic_signal(
+        request.input, rule_result, semantic_result.score, risk_engine.semantic_threshold,
+    )
     assessment = risk_engine.assess(
         rule_score=rule_result.score,
-        semantic_score=semantic_result.score,
+        semantic_score=semantic_signal.effective_score,
     )
     decision = input_policy.decide_assessment(assessment)
 
@@ -89,6 +93,7 @@ async def guard(request: GuardRequest, db: db_dependency):
                     "semantic_guard" in assessment.triggered_detectors
                 ),
                 "threshold": risk_engine.semantic_threshold,
+                **semantic_signal.evidence,
             },
             "latency_ms": semantic_latency_ms,
         },
@@ -103,7 +108,6 @@ async def guard(request: GuardRequest, db: db_dependency):
         latency_ms=total_latency_ms,
         detector_results=detector_results,
     )
-
     return GuardResponse(
         request_id=request_id,
         action=decision.action,

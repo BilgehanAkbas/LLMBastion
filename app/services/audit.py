@@ -71,7 +71,8 @@ def _sanitize_detector_evidence(
 
         return {
             key: evidence[key]
-            for key in ("triggered", "threshold")
+            for key in ("triggered", "threshold", "semantic_safe_intent_override",
+                        "intent_family", "original_semantic_score")
             if key in evidence
         }
 

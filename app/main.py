@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -10,6 +11,8 @@ from sqlalchemy import text
 from .core.config import (
     APP_ENV,
     GROQ_API_KEY,
+    GROQ_MAX_CONCURRENT_REQUESTS,
+    GROQ_MAX_QUEUED_REQUESTS,
     LLM_PROVIDER,
     LOG_LEVEL,
     MAX_REQUEST_BODY_BYTES,
@@ -25,11 +28,14 @@ from .models import Base
 from .routers.api_v1 import router as api_v1_router
 from .routers.dashboard import router as dashboard_router
 from .routers.gateway import (
+    provider as gateway_provider,
     router as gateway_router,
     semantic_guard,
 )
 from .routers.playground import router as playground_router
 from .routers.public import router as public_router
+from .routers import gateway
+from .providers.admission import ProviderAdmission
 from .services.rate_limiter import (
     ChatRateLimitMiddleware,
     RateLimiter,
@@ -44,6 +50,16 @@ logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 APP_VERSION = "1.0.0"
+
+
+@asynccontextmanager
+async def _provider_lifespan(application):
+    # Semaphore waiters, like the async SDK client, belong to this app loop.
+    gateway.provider_admission = ProviderAdmission(GROQ_MAX_CONCURRENT_REQUESTS, GROQ_MAX_QUEUED_REQUESTS)
+    try:
+        yield
+    finally:
+        await gateway_provider.close()
 
 
 def _check_database_ready() -> None:
@@ -98,6 +114,7 @@ def create_app(
     )
 
     application = FastAPI(
+        lifespan=_provider_lifespan,
         title="LLMBastion",
         description=(
             "LLM security gateway for prompt and output protection."

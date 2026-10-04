@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from typing import Annotated
@@ -7,23 +8,31 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette import status
-from starlette.concurrency import run_in_threadpool
+from groq import APITimeoutError
 
 from ..core.config import (
     GROQ_API_KEY,
     GROQ_MODEL,
+    GROQ_MAX_RETRIES,
+    GROQ_TIMEOUT_SECONDS,
+    GROQ_TOTAL_DEADLINE_SECONDS,
+    GROQ_MAX_CONCURRENT_REQUESTS,
+    GROQ_MAX_QUEUED_REQUESTS,
     LLM_PROVIDER,
 )
 from ..core.observability import get_request_id, log_event
 from ..database import SessionLocal
 from ..guards.input.rule_guard import RuleGuard
 from ..guards.input.semantic_guard import SemanticGuard
+from ..guards.input.benign_intent import adapt_semantic_signal
 from ..guards.output.data_guard import DataGuard, OutputAction
 from ..policies.input_policy import InputPolicy, PolicyAction
 from ..providers.errors import (
     ProviderConfigurationError,
     ProviderResponseError,
+    ProviderOverloadedError,
 )
+from ..providers.admission import ProviderAdmission
 from ..providers.factory import build_provider
 from ..services.audit import save_request_audit
 from ..services.risk_engine import RiskEngine
@@ -45,7 +54,10 @@ provider = build_provider(
     LLM_PROVIDER,
     groq_api_key=GROQ_API_KEY,
     groq_model=GROQ_MODEL,
+    groq_timeout_seconds=GROQ_TIMEOUT_SECONDS,
+    groq_max_retries=GROQ_MAX_RETRIES,
 )
+provider_admission = ProviderAdmission(GROQ_MAX_CONCURRENT_REQUESTS, GROQ_MAX_QUEUED_REQUESTS)
 
 
 def get_db():
@@ -114,11 +126,16 @@ async def chat(request: ChatRequest, db: db_dependency):
         time.perf_counter() - semantic_started
     ) * 1000
 
+    semantic_signal = adapt_semantic_signal(
+        request.message, rule_result, semantic_result.score, risk_engine.semantic_threshold,
+    )
     assessment = risk_engine.assess(
         rule_score=rule_result.score,
-        semantic_score=semantic_result.score,
+        semantic_score=semantic_signal.effective_score,
     )
     decision = input_policy.decide_assessment(assessment)
+
+    provider_called = False
 
     detector_results = [
         {
@@ -143,6 +160,7 @@ async def chat(request: ChatRequest, db: db_dependency):
                     in assessment.triggered_detectors
                 ),
                 "threshold": risk_engine.semantic_threshold,
+                **semantic_signal.evidence,
             },
             "latency_ms": semantic_latency_ms,
         },
@@ -181,14 +199,19 @@ async def chat(request: ChatRequest, db: db_dependency):
         )
 
     provider_started = time.perf_counter()
+    provider_deadline = asyncio.timeout(GROQ_TOTAL_DEADLINE_SECONDS)
 
     try:
-        # Provider SDKs are synchronous. Run them outside the event loop so one
-        # upstream request does not block unrelated FastAPI requests.
-        model_response = await run_in_threadpool(
-            provider.generate,
-            request.message,
-        )
+        # Covers admission, client setup, network waits and the retry chain.
+        # Cancellation propagates directly to async SDK/HTTPX I/O.
+        async with provider_deadline:
+            async with provider_admission.slot():
+                # Do not dispatch after expiry even if the timer callback is
+                # delayed behind a semaphore handoff on a busy event loop.
+                if asyncio.get_running_loop().time() >= provider_deadline.when():
+                    raise TimeoutError
+                provider_called = True
+                model_response = await provider.generate(request.message)
     except ProviderConfigurationError as exc:
         provider_latency_ms = (
             time.perf_counter() - provider_started
@@ -276,6 +299,14 @@ async def chat(request: ChatRequest, db: db_dependency):
             detail="LLM provider returned an invalid response",
         ) from exc
     except Exception as exc:
+        if provider_deadline.expired() or asyncio.get_running_loop().time() >= provider_deadline.when():
+            error_type = "deadline_exceeded" if provider_called else "admission_deadline_exceeded"
+        elif isinstance(exc, ProviderOverloadedError):
+            error_type = "overloaded"
+        elif isinstance(exc, APITimeoutError):
+            error_type = "provider_timeout"
+        else:
+            error_type = "request_failed"
         provider_latency_ms = (
             time.perf_counter() - provider_started
         ) * 1000
@@ -285,7 +316,7 @@ async def chat(request: ChatRequest, db: db_dependency):
             "evidence": {
                 "provider": LLM_PROVIDER,
                 "status": "ERROR",
-                "error_type": "request_failed",
+                "error_type": error_type,
             },
             "latency_ms": provider_latency_ms,
         })
@@ -295,7 +326,7 @@ async def chat(request: ChatRequest, db: db_dependency):
             "provider.complete",
             provider=LLM_PROVIDER,
             provider_status="error",
-            error_type="request_failed",
+            error_type=error_type,
             latency_ms=round(provider_latency_ms, 3),
             exc_info=(
                 type(exc),
@@ -315,8 +346,9 @@ async def chat(request: ChatRequest, db: db_dependency):
             detector_results=detector_results,
         )
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="LLM provider request failed",
+            status_code=(status.HTTP_503_SERVICE_UNAVAILABLE if error_type == "overloaded"
+                         else status.HTTP_502_BAD_GATEWAY),
+            detail="LLM provider busy" if error_type == "overloaded" else "LLM provider request failed",
         ) from exc
 
     provider_latency_ms = (

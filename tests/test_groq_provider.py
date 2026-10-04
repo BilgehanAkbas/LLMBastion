@@ -2,6 +2,9 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+from unittest.mock import AsyncMock
+
+pytestmark = pytest.mark.asyncio
 
 from app.providers.errors import (
     ProviderConfigurationError,
@@ -16,8 +19,8 @@ from app.providers.groq_provider import (
 class FakeGroq:
     last_create_kwargs = None
 
-    def __init__(self, api_key):
-        def create(**kwargs):
+    def __init__(self, api_key, *, timeout, max_retries):
+        async def create(**kwargs):
             FakeGroq.last_create_kwargs = kwargs
             return SimpleNamespace(
                 choices=[
@@ -37,40 +40,40 @@ class FakeGroq:
 
 
 class EmptyResponseGroq:
-    def __init__(self, api_key):
+    def __init__(self, api_key, *, timeout, max_retries):
         self.chat = SimpleNamespace(
             completions=SimpleNamespace(
-                create=lambda **kwargs: SimpleNamespace(
+                create=AsyncMock(return_value=SimpleNamespace(
                     choices=[
                         SimpleNamespace(
                             message=SimpleNamespace(content=None)
                         )
                     ]
-                )
+                ))
             )
         )
 
 
 class WhitespaceResponseGroq:
-    def __init__(self, api_key):
+    def __init__(self, api_key, *, timeout, max_retries):
         self.chat = SimpleNamespace(
             completions=SimpleNamespace(
-                create=lambda **kwargs: SimpleNamespace(
+                create=AsyncMock(return_value=SimpleNamespace(
                     choices=[
                         SimpleNamespace(
                             message=SimpleNamespace(content="   ")
                         )
                     ]
-                )
+                ))
             )
         )
 
 
-def test_groq_provider_returns_text(monkeypatch):
+async def test_groq_provider_returns_text(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         "groq",
-        SimpleNamespace(Groq=FakeGroq),
+        SimpleNamespace(AsyncGroq=FakeGroq),
     )
 
     provider = GroqProvider(
@@ -78,21 +81,21 @@ def test_groq_provider_returns_text(monkeypatch):
         model="openai/gpt-oss-20b",
     )
 
-    assert provider.generate("hello") == "mock response"
+    assert await provider.generate("hello") == "mock response"
 
 
-def test_groq_provider_adds_system_prompt_and_length_cap(monkeypatch):
+async def test_groq_provider_adds_system_prompt_and_length_cap(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         "groq",
-        SimpleNamespace(Groq=FakeGroq),
+        SimpleNamespace(AsyncGroq=FakeGroq),
     )
 
     provider = GroqProvider(
         api_key="test-key",
         model="openai/gpt-oss-20b",
     )
-    provider.generate("Python nedir?")
+    await provider.generate("Python nedir?")
 
     kwargs = FakeGroq.last_create_kwargs
 
@@ -105,11 +108,11 @@ def test_groq_provider_adds_system_prompt_and_length_cap(monkeypatch):
     }
 
 
-def test_groq_provider_allows_policy_override(monkeypatch):
+async def test_groq_provider_allows_policy_override(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         "groq",
-        SimpleNamespace(Groq=FakeGroq),
+        SimpleNamespace(AsyncGroq=FakeGroq),
     )
 
     provider = GroqProvider(
@@ -118,7 +121,7 @@ def test_groq_provider_allows_policy_override(monkeypatch):
         max_tokens=123,
         system_prompt="custom policy",
     )
-    provider.generate("hello")
+    await provider.generate("hello")
 
     kwargs = FakeGroq.last_create_kwargs
 
@@ -129,7 +132,7 @@ def test_groq_provider_allows_policy_override(monkeypatch):
     }
 
 
-def test_groq_provider_requires_api_key():
+async def test_groq_provider_requires_api_key():
     provider = GroqProvider(
         api_key=None,
         model="openai/gpt-oss-20b",
@@ -139,14 +142,14 @@ def test_groq_provider_requires_api_key():
         ProviderConfigurationError,
         match="GROQ_API_KEY is not configured",
     ):
-        provider.generate("hello")
+        await provider.generate("hello")
 
 
-def test_groq_provider_rejects_empty_response(monkeypatch):
+async def test_groq_provider_rejects_empty_response(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         "groq",
-        SimpleNamespace(Groq=EmptyResponseGroq),
+        SimpleNamespace(AsyncGroq=EmptyResponseGroq),
     )
 
     provider = GroqProvider(
@@ -158,14 +161,14 @@ def test_groq_provider_rejects_empty_response(monkeypatch):
         ProviderResponseError,
         match="Groq returned an empty response",
     ):
-        provider.generate("hello")
+        await provider.generate("hello")
 
 
-def test_groq_provider_rejects_whitespace_response(monkeypatch):
+async def test_groq_provider_rejects_whitespace_response(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         "groq",
-        SimpleNamespace(Groq=WhitespaceResponseGroq),
+        SimpleNamespace(AsyncGroq=WhitespaceResponseGroq),
     )
 
     provider = GroqProvider(
@@ -177,4 +180,4 @@ def test_groq_provider_rejects_whitespace_response(monkeypatch):
         ProviderResponseError,
         match="Groq returned an empty response",
     ):
-        provider.generate("hello")
+        await provider.generate("hello")
